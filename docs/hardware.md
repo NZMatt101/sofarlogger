@@ -21,8 +21,8 @@ SOFAR TL/TLM inverters with an IGEN / "omnik"-style Wi-Fi logger stick. The Pi p
 
 ## SOFAR ME3000SP
 
-- RS485 terminals on the inverter's communication port (see the ME3000SP manual for your model's pin-out);
-  Modbus RTU, slave address 1.
+- Wiring: the inverter's **2-pin RS485 connector**, its **D+ to the adapter's D+** and **D− to the adapter's
+  D−**. Modbus RTU, slave address 1.
 - Reads use Modbus functions 3 and 4 only. Writes use SOFAR's passive-mode function `0x42` (standby, auto,
   charge, discharge) and are only sent from the battery page or by Pi control.
 - **Passive commands need the inverter in Passive mode:** on the inverter's screen, Work Mode Set → Set

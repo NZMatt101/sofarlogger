@@ -58,6 +58,9 @@ midnight; its days are the days it starts on), and one of two actions:
 - Outside the slots, normal Pi control applies. If slots overlap, the lower-numbered one wins.
 - Charging stops at once if the BMS reading goes missing or it reports a protection, a cell reaches 3.55 V, the
   pack reaches the battery page's "stop charging" voltage, or the inverter reports a fault.
+- The power is the inverter's AC power. The battery gets about 4% less after conversion: tested at 3000 W, the
+  ME3000SP drew 3040 W and the battery took 2910 W. Grid import = charge power + house load − solar (the
+  ME3000SP is AC-coupled, so it can't tell solar from grid; solar just reduces the import).
 - Grid charging adds to the house load on your main fuse: allow for that when choosing the power.
 - Slot starts and ends are recorded in the battery page's control events.
 - Times are the Pi's local time, shown at the top of the page.

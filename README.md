@@ -32,7 +32,11 @@ Nothing is sent to the internet unless you turn it on.
 | SOFAR ME3000SP | [USB to RS485 adapter](https://link.amazon/B09KdWDPi) on the Pi | Tested on software V300 |
 | Battery BMS (JBD protocol) | Second USB to RS485 adapter | Tested on a 16-cell 280 Ah LiFePO4 pack |
 
-Other equipment needs a new driver in `collector/poller.py`. Wiring and adapter notes:
+Other equipment needs a new driver in `collector/poller.py`.
+
+![Wiring diagram](docs/wiring.svg)
+
+Wiring and adapter notes:
 [docs/hardware.md](docs/hardware.md).
 
 ## Install

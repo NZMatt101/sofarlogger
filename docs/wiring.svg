@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 800" width="1100" height="800" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328">
+  <title>sofarlogger wiring diagram</title>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill: #f6f8fa; stroke: #57606a; stroke-width: 1.5; }
+    .pi { fill: #e7f5ec; stroke: #1a7f37; stroke-width: 2; }
+    .h { font-weight: 700; font-size: 15px; }
+    .s { font-size: 12px; fill: #57606a; }
+    .rs { stroke: #0969da; stroke-width: 2.5; fill: none; }
+    .rsb { stroke: #0969da; stroke-width: 2.5; fill: none; stroke-dasharray: 1 0; opacity: .55; }
+    .wifi { stroke: #8250df; stroke-width: 2; fill: none; stroke-dasharray: 7 5; }
+    .wire { stroke: #57606a; stroke-width: 2.5; fill: none; }
+    .dcp { stroke: #cf222e; stroke-width: 5; }
+    .dcn { stroke: #1f2328; stroke-width: 5; }
+    .can { stroke: #8c959f; stroke-width: 2; stroke-dasharray: 2 4; }
+    .lab { font-size: 12px; fill: #0969da; font-weight: 600; }
+    .wl { font-size: 12px; fill: #8250df; font-weight: 600; }
+  </style>
+
+  <rect width="1100" height="800" fill="#ffffff"/>
+  <text x="40" y="38" font-size="22" font-weight="700">sofarlogger wiring</text>
+  <text x="40" y="60" class="s">Communication links only. Mains and DC power wiring must follow the equipment manuals and local rules.</text>
+
+  <g transform="translate(0,60)">
+    <!-- Phone / PC -->
+    <rect class="box" x="40" y="40" width="200" height="76" rx="8"/>
+    <text x="56" y="68" class="h">Phone / PC</text>
+    <text x="56" y="90" class="s">Browser: http://pi-address/</text>
+    <text x="56" y="106" class="s">Admin: /admin/admin.php</text>
+
+    <!-- Router -->
+    <rect class="box" x="450" y="40" width="200" height="76" rx="8"/>
+    <text x="466" y="70" class="h">Home router</text>
+    <text x="466" y="92" class="s">Wi-Fi and Ethernet</text>
+    <text x="466" y="108" class="s">Reserve fixed IPs here</text>
+
+    <!-- Solar inverter -->
+    <rect class="box" x="820" y="26" width="250" height="104" rx="8"/>
+    <text x="836" y="52" class="h">SOFAR TL/TLM solar inverter</text>
+    <text x="836" y="70" class="s">One or more</text>
+    <rect x="836" y="80" width="218" height="38" rx="6" fill="#ffffff" stroke="#8250df" stroke-width="1.5"/>
+    <text x="848" y="104">Wi-Fi logger stick (IGEN)</text>
+
+    <!-- Wi-Fi links -->
+    <path class="wifi" d="M240,78 H450"/>
+    <text x="300" y="70" class="wl">Wi-Fi</text>
+    <path class="wifi" d="M836,99 H740 V90 H650"/>
+    <text x="666" y="82" class="wl">Wi-Fi · TCP 8899</text>
+
+    <!-- Pi monitor (optional) -->
+    <rect class="box" x="40" y="236" width="230" height="104" rx="8" stroke-dasharray="6 4"/>
+    <text x="56" y="264" class="h">Pi monitor (optional)</text>
+    <text x="56" y="286" class="s">Second Pi with a 2.8″ screen</text>
+    <text x="56" y="304" class="s">Reads api.php from the logger</text>
+    <text x="56" y="322" class="s">extras/pi-monitor</text>
+    <path class="wifi" d="M270,288 H350 V104 H450"/>
+    <text x="358" y="200" class="wl">Wi-Fi</text>
+
+    <!-- Ethernet router to Pi -->
+    <path class="wire" d="M550,116 V214"/>
+    <text x="560" y="160" class="s">Ethernet (or Wi-Fi)</text>
+
+    <!-- Raspberry Pi -->
+    <rect class="pi" x="420" y="214" width="260" height="186" rx="10"/>
+    <text x="438" y="242" class="h">Raspberry Pi 3B or newer</text>
+    <text x="438" y="262" class="s">sofarlogger: poller, dashboard,</text>
+    <text x="438" y="278" class="s">admin page, Pi battery control</text>
+    <text x="438" y="306" class="s">Power: proper 5 V 2.5 A supply</text>
+    <text x="438" y="322" class="s">SD card: 8 GB+ high endurance</text>
+    <!-- USB ports -->
+    <rect x="652" y="236" width="40" height="28" rx="3" fill="#ffffff" stroke="#57606a" stroke-width="1.5"/>
+    <text x="672" y="254" font-size="10" fill="#57606a" text-anchor="middle">USB</text>
+    <rect x="652" y="346" width="40" height="28" rx="3" fill="#ffffff" stroke="#57606a" stroke-width="1.5"/>
+    <text x="672" y="364" font-size="10" fill="#57606a" text-anchor="middle">USB</text>
+    <text x="438" y="384" class="s">Keep each adapter in the same USB socket</text>
+
+    <!-- USB cables -->
+    <path class="wire" d="M692,250 H740"/>
+    <path class="wire" d="M692,360 H740"/>
+
+    <!-- RS485 adapters -->
+    <rect class="box" x="740" y="226" width="120" height="48" rx="6"/>
+    <text x="752" y="246" font-weight="600">USB–RS485 #1</text>
+    <text x="752" y="264" class="s">D+  D−</text>
+    <rect class="box" x="740" y="336" width="120" height="48" rx="6"/>
+    <text x="752" y="356" font-weight="600">USB–RS485 #2</text>
+    <text x="752" y="374" class="s">D+  D−</text>
+
+    <!-- RS485 pairs -->
+    <path class="rs" d="M860,244 H920"/>
+    <path class="rs" d="M860,256 H920"/>
+    <text x="866" y="238" class="lab">A  B</text>
+    <path class="rs" d="M860,354 H920"/>
+    <path class="rs" d="M860,366 H920"/>
+    <text x="866" y="348" class="lab">A  B</text>
+
+    <!-- ME3000SP -->
+    <rect class="box" x="920" y="196" width="150" height="104" rx="8"/>
+    <text x="934" y="222" class="h">SOFAR ME3000SP</text>
+    <text x="934" y="242" class="s">Battery inverter</text>
+    <text x="934" y="260" class="s">RS485, address 1</text>
+    <text x="934" y="278" class="s">9600 8N1</text>
+    <path class="wire" d="M1045,196 V160" marker-end="url(#arr)"/>
+    <text x="900" y="176" class="s">AC to switchboard</text>
+
+    <!-- Battery -->
+    <rect class="box" x="920" y="330" width="150" height="120" rx="8"/>
+    <text x="934" y="356" class="h">Battery</text>
+    <text x="934" y="376" class="s">48 V LiFePO4</text>
+    <text x="934" y="394" class="s">JBD BMS, RS485</text>
+    <text x="934" y="412" class="s">9600 8N1</text>
+    <text x="934" y="436" class="s">RJ45: pin 2 A, pin 1 B</text>
+
+    <!-- DC and CAN between ME3000SP and battery -->
+    <line class="dcp" x1="950" y1="300" x2="950" y2="330"/>
+    <line class="dcn" x1="966" y1="300" x2="966" y2="330"/>
+    <text x="974" y="320" class="s">DC</text>
+    <line class="can" x1="1045" y1="300" x2="1045" y2="330"/>
+    <text x="1000" y="320" class="s">CAN</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(40,530)">
+    <line class="rs" x1="0" y1="0" x2="40" y2="0"/><text x="50" y="4">RS485 pair (twisted pair, A to A, B to B)</text>
+    <line class="wifi" x1="330" y1="0" x2="370" y2="0"/><text x="380" y="4">Wi-Fi</text>
+    <line class="wire" x1="450" y1="0" x2="490" y2="0"/><text x="500" y="4">Ethernet / USB cable</text>
+    <line class="dcp" x1="660" y1="0" x2="690" y2="0"/><line class="dcn" x1="690" y1="0" x2="720" y2="0"/><text x="730" y="4">Battery DC</text>
+    <line class="can" x1="830" y1="0" x2="870" y2="0"/><text x="880" y="4">CAN (not used)</text>
+  </g>
+
+  <!-- Detail panels -->
+  <g transform="translate(0,560)">
+    <!-- Battery RJ45 -->
+    <rect class="box" x="40" y="0" width="340" height="210" rx="8"/>
+    <text x="56" y="28" class="h">Battery RS485 socket (RJ45)</text>
+    <rect x="60" y="48" width="150" height="74" rx="6" fill="#ffffff" stroke="#57606a" stroke-width="1.5"/>
+    <rect x="110" y="112" width="50" height="10" fill="#d0d7de"/>
+    <g font-size="11" text-anchor="middle">
+      <rect x="70" y="58" width="12" height="30" fill="#0969da"/><text x="76" y="104">1</text>
+      <rect x="87" y="58" width="12" height="30" fill="#0969da"/><text x="93" y="104">2</text>
+      <rect x="104" y="58" width="12" height="30" fill="#d0d7de"/><text x="110" y="104">3</text>
+      <rect x="121" y="58" width="12" height="30" fill="#d0d7de"/><text x="127" y="104">4</text>
+      <rect x="138" y="58" width="12" height="30" fill="#d0d7de"/><text x="144" y="104">5</text>
+      <rect x="155" y="58" width="12" height="30" fill="#d0d7de"/><text x="161" y="104">6</text>
+      <rect x="172" y="58" width="12" height="30" fill="#d0d7de"/><text x="178" y="104">7</text>
+      <rect x="189" y="58" width="12" height="30" fill="#d0d7de"/><text x="195" y="104">8</text>
+    </g>
+    <path class="rs" d="M93,58 V40 H240 V60"/>
+    <path class="rs" d="M76,58 V34 H260 V60" opacity=".6"/>
+    <rect x="228" y="60" width="44" height="34" rx="4" fill="#ffffff" stroke="#57606a"/>
+    <text x="232" y="82" font-size="11">D+ D−</text>
+    <text x="290" y="72" class="lab">pin 2 → D+</text>
+    <text x="290" y="90" class="lab">pin 1 → D−</text>
+    <text x="56" y="148" class="s">No GND wire needed. Pins 3–8 not connected.</text>
+    <text x="56" y="166" class="s">This is the tested battery: check your battery's</text>
+    <text x="56" y="182" class="s">manual, as pin-outs differ between brands.</text>
+
+    <!-- ME3000SP -->
+    <rect class="box" x="400" y="0" width="320" height="210" rx="8"/>
+    <text x="416" y="28" class="h">ME3000SP RS485</text>
+    <text x="416" y="56">Inverter <tspan font-weight="700">A (485+)</tspan> → adapter <tspan font-weight="700">D+</tspan></text>
+    <text x="416" y="78">Inverter <tspan font-weight="700">B (485−)</tspan> → adapter <tspan font-weight="700">D−</tspan></text>
+    <text x="416" y="106" class="s">Terminal positions: see the ME3000SP manual</text>
+    <text x="416" y="122" class="s">(communication port).</text>
+    <text x="416" y="148" class="s">Modbus RTU, address 1, 9600 8N1.</text>
+    <text x="416" y="166" class="s">For Pi control, set the inverter's Work Mode</text>
+    <text x="416" y="182" class="s">to Passive on its screen.</text>
+
+    <!-- Rules -->
+    <rect class="box" x="740" y="0" width="330" height="210" rx="8"/>
+    <text x="756" y="28" class="h">Rules of thumb</text>
+    <text x="756" y="56">• RS485 is not crossed: A–A, B–B.</text>
+    <text x="756" y="80">• One adapter per device.</text>
+    <text x="756" y="104">• In Admin, pick each port by its</text>
+    <text x="770" y="122">/dev/serial/by-path/… name.</text>
+    <text x="756" y="146">• No readings? Swap A and B at</text>
+    <text x="770" y="164">one end: it does no harm.</text>
+    <text x="756" y="188">• Keep RS485 runs short and twisted.</text>
+  </g>
+</svg>

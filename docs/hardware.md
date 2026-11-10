@@ -1,5 +1,7 @@
 # Hardware and wiring
 
+![sofarlogger wiring diagram](wiring.svg)
+
 ## Solar inverters (Wi-Fi logger stick)
 
 SOFAR TL/TLM inverters with an IGEN / "omnik"-style Wi-Fi logger stick. The Pi polls the stick on TCP port

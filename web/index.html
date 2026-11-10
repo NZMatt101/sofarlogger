@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar Overview</title>
+<link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+<noscript><div style="margin:8px 16px;padding:10px 14px;border:1px solid #c0392b;border-radius:8px;color:#c0392b">JavaScript is turned off in this browser, so live data and charts cannot load. Turn JavaScript on for this site (e.g. Samsung Internet: Settings, Sites and downloads, or disable content blockers for this site).</div></noscript>
+<header>
+  <h1 id="siteName">☀ Solar</h1>
+  <nav class="top"><a href="savings.html">Savings</a> · <a href="green.html">🌿 Going Green</a> · <a href="admin/admin.php">Admin</a> · <span class="updated" id="updated">Loading…</span></nav>
+</header>
+<main>
+  <section class="card kpis" id="kpis"></section>
+
+  <section>
+    <div class="section-head"><h2>Equipment</h2><span class="updated" id="sunInfo"></span></div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section id="retiredSection" hidden>
+    <div class="section-head"><h2>Retired equipment</h2></div>
+    <div class="tiles" id="retiredTiles"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Site power — <span id="dayLabel"></span></h2>
+      <div class="controls">
+        <button id="prevDay" aria-label="Previous day">◀</button>
+        <input type="date" id="dayPicker">
+        <button id="nextDay" aria-label="Next day">▶</button>
+        <button id="today">Today</button>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="dayChart"></canvas></div>
+    <div class="summary" id="daySummary"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Daily energy</h2>
+      <div class="controls" id="rangeBtns">
+        <button data-days="7">7 days</button>
+        <button data-days="30" class="active">30 days</button>
+        <button data-days="90">90 days</button>
+        <button data-days="365">1 year</button>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+    <div class="summary" id="dailySummary"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>Monthly energy — all history</h2></div>
+    <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+    <div class="summary" id="monthlySummary"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Export CSV (all equipment)</h2>
+      <form class="controls" action="api.php" method="get">
+        <input type="hidden" name="action" value="csv">
+        <label>From <input type="date" name="from" id="csvFrom"></label>
+        <label>To <input type="date" name="to" id="csvTo"></label>
+        <button type="submit">Download</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<script src="chart.umd.min.js?v=3"></script>
+<script src="common.js?v=3"></script>
+<script>
+let names = {}, dayChart, dailyChart, monthlyChart, days = 30;
+
+function retiredTile(d) {
+  const r = d.latest;
+  const span = d.first_ts && r ? `${monthStr(d.first_ts)} – ${monthStr(r.ts)}` : 'No history imported';
+  return `<a class="card tile retired" href="device.html?id=${encodeURIComponent(d.id)}">
+    <div class="tile-head">
+      <div><div class="tile-name"><span class="swatch" style="background:${colorFor(d.id)}"></span>${TYPE_ICON[d.type] || '•'} ${esc(d.name)}</div>
+           <div class="tile-meta">${esc(d.type)}${d.rated_w ? ' · ' + (d.rated_w / 1000) + ' kW' : ''}</div></div>
+      ${badge(d.state)}
+    </div>
+    <div class="tile-power stale">${r ? fmt(r.energy_total_kwh / 1000, 2) : '—'} <small>MWh produced</small></div>
+    <div class="tile-foot"><span>${esc(span)}</span><span>History →</span></div>
+  </a>`;
+}
+
+function batteryTile(d) {
+  const r = d.latest, v = r ? r.data : {};
+  const pct = Math.max(0, Math.min(100, v.soc || 0));
+  const w = v.batt_power_w;
+  const flow = w === undefined ? '—' : w < 0 ? `Discharging ${Math.abs(w)} W` : w > 0 ? `Charging ${w} W` : 'Idle';
+  return `<a class="card tile" href="device.html?id=${encodeURIComponent(d.id)}">
+    <div class="tile-head">
+      <div><div class="tile-name"><span class="swatch" style="background:${colorFor(d.id)}"></span>${TYPE_ICON[d.type] || '•'} ${esc(d.name)}</div>
+           <div class="tile-meta">${esc(d.type)}${d.location ? ' · ' + esc(d.location) : ''}${d.rated_w ? ' · ' + (d.rated_w / 1000) + ' kW' : ''}</div></div>
+      ${badge(d.state)}
+    </div>
+    <div class="tile-power ${d.state === 'online' ? '' : 'stale'}">${fmt(v.soc, 0)} <small>%</small></div>
+    <div class="bar"><span style="width:${pct}%;background:${colorFor(d.id)}"></span></div>
+    <div class="tile-foot"><span>${esc(flow)}${v.faults && v.faults !== 'None' ? ' · Fault ' + esc(v.faults) : ''}</span><span>${r ? 'Seen ' + timeStr(r.ts) : 'No readings yet'}</span></div>
+  </a>`;
+}
+
+function tile(d) {
+  if (d.type === 'battery') return batteryTile(d);
+  const r = d.latest;
+  const pct = d.rated_w && d.power_w ? Math.min(100, d.power_w / d.rated_w * 100) : 0;
+  const power = d.power_w === null ? '—' : Math.round(d.power_w);
+  return `<a class="card tile" href="device.html?id=${encodeURIComponent(d.id)}">
+    <div class="tile-head">
+      <div><div class="tile-name"><span class="swatch" style="background:${colorFor(d.id)}"></span>${TYPE_ICON[d.type] || '•'} ${esc(d.name)}</div>
+           <div class="tile-meta">${esc(d.type)}${d.location ? ' · ' + esc(d.location) : ''}${d.rated_w ? ' · ' + (d.rated_w / 1000) + ' kW' : ''}</div></div>
+      ${badge(d.state)}
+    </div>
+    <div class="tile-power ${d.state === 'online' ? '' : 'stale'}">${power} <small>W</small></div>
+    <div class="bar"><span style="width:${pct}%;background:${colorFor(d.id)}"></span></div>
+    <div class="tile-foot"><span>Today ${fmt(d.energy_today_kwh, 2)} kWh</span><span>${r ? 'Seen ' + timeStr(r.ts) : 'No readings yet'}</span></div>
+  </a>`;
+}
+
+async function loadSite() {
+  try {
+    const s = await getJSON('api.php?action=site');
+    assignColors(s.devices);
+    names = Object.fromEntries(s.devices.map(d => [d.id, d.name]));
+    document.title = s.site.name;
+    document.getElementById('siteName').textContent = '☀ ' + s.site.name;
+    const t = s.totals;
+    const pct = t.rated_w ? Math.round(t.power_w / t.rated_w * 100) : null;
+    document.getElementById('kpis').innerHTML = `
+      <div class="kpi"><div class="k">Power now</div><div class="v">${Math.round(t.power_w)} <small>W</small></div>
+        <div class="sub">${pct !== null ? pct + '% of ' + (t.rated_w / 1000) + ' kW installed' : ''}</div></div>
+      <div class="kpi"><div class="k">Today</div><div class="v">${fmt(t.energy_today_kwh, 2)} <small>kWh</small></div></div>
+      <div class="kpi"><div class="k">Lifetime</div><div class="v">${fmt(t.energy_total_kwh / 1000, 2)} <small>MWh</small></div></div>
+      <div class="kpi"><div class="k">Equipment online</div><div class="v">${t.online} <small>of ${t.count} active</small></div>
+        <div class="sub">${s.site.daylight ? 'Daylight' : 'Night — inverters sleep'}</div></div>`;
+    const active = s.devices.filter(d => !d.retired), retired = s.devices.filter(d => d.retired);
+    document.getElementById('tiles').innerHTML = active.length ? active.map(tile).join('')
+      : '<div class="card empty">No active equipment configured.</div>';
+    document.getElementById('retiredSection').hidden = !retired.length;
+    document.getElementById('retiredTiles').innerHTML = retired.map(retiredTile).join('');
+    if (s.site.sunrise) document.getElementById('sunInfo').textContent =
+      `Sunrise ${timeStr(s.site.sunrise)} · Sunset ${timeStr(s.site.sunset)}`;
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-NZ');
+  } catch (e) {
+    document.getElementById('updated').textContent = 'Cannot reach the Pi API';
+  }
+}
+
+const nav = dayNavigator(async date => {
+  const d = await getJSON(`api.php?action=day&date=${isoDate(date)}`);
+  const res = renderDayChart(document.getElementById('dayChart'), dayChart, d, names, true);
+  dayChart = res.chart;
+  const parts = Object.entries(res.byDevice).map(([id, rs]) =>
+    `${names[id] || id}: ${Math.max(...rs.map(r => r.energy_today_kwh || 0)).toFixed(2)} kWh`);
+  document.getElementById('daySummary').textContent = parts.length ? parts.join(' · ') : 'No readings for this day.';
+});
+
+async function loadDaily() {
+  const d = await getJSON(`api.php?action=daily&days=${days}`);
+  const res = renderDailyChart(document.getElementById('dailyChart'), dailyChart, d, days, names);
+  dailyChart = res.chart;
+  document.getElementById('dailySummary').textContent = `Site total ${res.total.toFixed(1)} kWh over ${days} days`;
+}
+async function loadMonthly() {
+  const d = await getJSON('api.php?action=monthly');
+  const res = renderMonthlyChart(document.getElementById('monthlyChart'), monthlyChart, d, names);
+  monthlyChart = res.chart;
+  document.getElementById('monthlySummary').textContent = res.months
+    ? `${(res.total / 1000).toFixed(2)} MWh over ${res.months} months, all equipment including retired` : 'No history yet.';
+}
+rangeButtons(n => { days = n; loadDaily(); });
+initCsvForm();
+
+loadSite().then(() => { nav.start(); loadDaily(); loadMonthly(); });
+setInterval(() => { loadSite(); if (nav.isToday()) nav.refresh(); }, 30000);
+</script>
+</body>
+</html>

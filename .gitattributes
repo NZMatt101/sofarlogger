@@ -1,0 +1,8 @@
+# Everything runs on Linux: keep Unix line endings even when edited on Windows
+* text=auto eol=lf
+*.png binary
+*.stl binary
+*.jpg binary
+.github export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Device</title>
+<link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+<noscript><div style="margin:8px 16px;padding:10px 14px;border:1px solid #c0392b;border-radius:8px;color:#c0392b">JavaScript is turned off in this browser, so live data and charts cannot load. Turn JavaScript on for this site (e.g. Samsung Internet: Settings, Sites and downloads, or disable content blockers for this site).</div></noscript>
+<header>
+  <div>
+    <div class="crumbs"><a href="./" id="siteLink">← Overview</a></div>
+    <h1 id="devName">Loading…</h1>
+  </div>
+  <nav class="top"><a href="savings.html">Savings</a> · <a href="green.html">🌿 Going Green</a> · <a href="admin/admin.php">Admin</a> · <span class="updated" id="updated"></span></nav>
+</header>
+<main>
+  <section class="card">
+    <div class="section-head"><h2 id="liveTitle">Live</h2><span><a id="controlLink" hidden>Control and settings →</a> <span id="devBadge"></span></span></div>
+    <div class="metrics" id="metrics"></div>
+    <div class="summary" id="lastSeen"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Power — <span id="dayLabel"></span></h2>
+      <div class="controls">
+        <select id="dayField" aria-label="Value to chart"></select>
+        <button id="prevDay" aria-label="Previous day">◀</button>
+        <input type="date" id="dayPicker">
+        <button id="nextDay" aria-label="Next day">▶</button>
+        <button id="today">Today</button>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="dayChart"></canvas></div>
+    <div class="summary" id="daySummary"></div>
+  </section>
+
+  <section class="card" data-generation>
+    <div class="section-head">
+      <h2>Daily energy</h2>
+      <div class="controls" id="rangeBtns">
+        <button data-days="7">7 days</button>
+        <button data-days="30" class="active">30 days</button>
+        <button data-days="90">90 days</button>
+        <button data-days="365">1 year</button>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+    <div class="summary" id="dailySummary"></div>
+  </section>
+
+  <section class="card" data-generation>
+    <div class="section-head"><h2>Monthly energy</h2></div>
+    <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+    <div class="summary" id="monthlySummary"></div>
+  </section>
+
+  <section class="card" id="eventsSection" hidden>
+    <div class="section-head"><h2>Events</h2><span class="updated" id="eventsNote"></span></div>
+    <div class="two-col">
+      <div><table class="events"><thead><tr><th>Event</th><th class="num">Count</th><th>Last</th></tr></thead>
+        <tbody id="eventCounts"></tbody></table></div>
+      <div class="scroll"><table class="events"><thead><tr><th>Time</th><th>Event</th></tr></thead>
+        <tbody id="eventRecent"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>Device details</h2></div>
+    <dl class="info" id="info"></dl>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Export CSV</h2>
+      <form class="controls" action="api.php" method="get">
+        <input type="hidden" name="action" value="csv">
+        <input type="hidden" name="device" id="csvDevice">
+        <label>From <input type="date" name="from" id="csvFrom"></label>
+        <label>To <input type="date" name="to" id="csvTo"></label>
+        <button type="submit">Download</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<script src="chart.umd.min.js?v=3"></script>
+<script src="common.js?v=3"></script>
+<script>
+const id = new URLSearchParams(location.search).get('id') || '';
+let dev, dayChart, dailyChart, monthlyChart, days = 30, lastDay, monthlyData;
+document.getElementById('csvDevice').value = id;
+
+const STATUS_TEXT = { ok: 'OK', no_data: 'Logger has no inverter data', unreachable: 'Not reachable',
+                      bad_reply: 'Unexpected reply', error: 'Poller error' };
+
+async function loadDevice() {
+  try {
+    const [site, d] = await Promise.all([getJSON('api.php?action=site'), getJSON(`api.php?action=device&id=${encodeURIComponent(id)}`)]);
+    assignColors(site.devices);
+    dev = d.device;
+    document.title = `${dev.name} · ${site.site.name}`;
+    document.getElementById('siteLink').textContent = '← ' + site.site.name;
+    document.getElementById('devName').textContent = `${TYPE_ICON[dev.type] || '•'} ${dev.name}`;
+    document.getElementById('devBadge').innerHTML = badge(dev.state);
+    if (dev.driver === 'me3000' && !dev.retired) {
+      const link = document.getElementById('controlLink');
+      link.href = `admin/battery.php?id=${encodeURIComponent(dev.id)}`;
+      link.hidden = false;
+    }
+    const r = dev.latest, values = r ? r.data : {};
+    if (dev.retired) { renderRetiredSummary(); }
+    else document.getElementById('metrics').innerHTML = dev.fields.map(f => `
+      <div class="metric ${dev.state === 'online' ? '' : 'stale'}"><div class="k">${esc(f.label)}</div>
+        <div class="v">${esc(fmt(values[f.key], f.decimals))}${f.unit && values[f.key] !== null && values[f.key] !== undefined ? ' ' + esc(f.unit) : ''}</div></div>`).join('');
+    document.getElementById('lastSeen').textContent = dev.retired
+      ? `History ${dateTimeStr(dev.first_ts)} to ${dateTimeStr(r && r.ts)} (imported from SD card)`
+      : `Last reading ${dateTimeStr(r && r.ts)} · Last poll ${dateTimeStr(dev.last_poll)}: ${STATUS_TEXT[dev.status] || dev.status || '—'}` +
+        (dev.detail && dev.status !== 'ok' ? ` (${dev.detail})` : '');
+    const info = dev.retired
+      ? [['ID', dev.id], ['Type', dev.type], ['Model', dev.model], ['Location', dev.location],
+         ['Rated power', dev.rated_w ? dev.rated_w + ' W' : ''], ['Status', 'Retired'], ['Notes', dev.notes],
+         ['First record', dateTimeStr(dev.first_ts)], ['Last record', dateTimeStr(r && r.ts)]]
+      : [['ID', dev.id], ['Type', dev.type], ['Model', dev.model], ['Location', dev.location],
+         ['Rated power', dev.rated_w ? dev.rated_w + ' W' : ''], ['Connection', `${dev.driver} driver · ${dev.ip || ''}`],
+         ['Logger serial', dev.serial], ['Inverter serial', values.inverter_sn],
+         ['Last successful poll', dateTimeStr(dev.last_ok)], ['Notes', dev.notes]];
+    document.getElementById('info').innerHTML = info.filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+    const sel = document.getElementById('dayField');
+    if (!sel.options.length) {
+      sel.innerHTML = dev.fields.filter(f => f.decimals !== null && !['e_total', 'h_total'].includes(f.key))
+        .map(f => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
+      sel.onchange = () => drawDay();
+    }
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-NZ');
+  } catch (e) {
+    document.getElementById('devName').textContent = 'Device not found';
+    document.getElementById('updated').textContent = String(e.message || e);
+  }
+}
+
+function drawDay() {
+  if (!lastDay) return;
+  const key = document.getElementById('dayField').value || 'pac';
+  const field = dev.fields.find(f => f.key === key) || { label: key, unit: '' };
+  const day = { ...lastDay, rows: lastDay.rows.map(r => ({ device: r.device, ts: r.ts, power_w: r.data?.[key] ?? null })) };
+  const res = renderDayChart(document.getElementById('dayChart'), dayChart, day, { [id]: field.label }, false);
+  dayChart = res.chart;
+  dayChart.options.scales.y.title.text = field.unit || '';
+  dayChart.options.scales.y.beginAtZero = !['vac1', 'fac', 'temp', 'batt_v', 'grid_v', 'grid_hz'].includes(key);
+  dayChart.options.plugins.tooltip.callbacks.label = i => `${field.label}: ${fmt(i.parsed.y, field.decimals ?? 1)} ${field.unit || ''}`;
+  dayChart.update();
+  const rs = lastDay.rows;
+  document.getElementById('daySummary').textContent = dev.type === 'battery'
+    ? (rs.length ? `${rs.length} readings` : 'No readings for this day.')
+    : rs.length
+    ? `${Math.max(...rs.map(r => r.energy_today_kwh || 0)).toFixed(2)} kWh · peak ${Math.round(Math.max(...rs.map(r => r.power_w || 0)))} W · ${rs.length} readings`
+    : 'No readings for this day.';
+}
+
+const nav = dayNavigator(async date => {
+  lastDay = await getJSON(`api.php?action=day&device=${encodeURIComponent(id)}&date=${isoDate(date)}`);
+  drawDay();
+});
+
+// For retired equipment, charts end at the last record instead of today.
+const endDate = () => dev.retired && dev.latest ? new Date(dev.latest.ts * 1000) : new Date();
+
+async function loadDaily() {
+  const end = endDate();
+  const span = Math.ceil((Date.now() - end.getTime()) / 86400000) + days;
+  const d = await getJSON(`api.php?action=daily&device=${encodeURIComponent(id)}&days=${span}`);
+  const res = renderDailyChart(document.getElementById('dailyChart'), dailyChart, d, days, { [id]: dev ? dev.name : id }, end);
+  dailyChart = res.chart;
+  const shown = res.chart.data.datasets.reduce((s, ds) => s + ds.data.reduce((a, v) => a + (v || 0), 0), 0);
+  document.getElementById('dailySummary').textContent = `Total ${shown.toFixed(1)} kWh over ${days} days to ${end.toLocaleDateString('en-NZ')}`;
+}
+
+async function loadMonthly() {
+  monthlyData = await getJSON(`api.php?action=monthly&device=${encodeURIComponent(id)}`);
+  const res = renderMonthlyChart(document.getElementById('monthlyChart'), monthlyChart, monthlyData, { [id]: dev.name });
+  monthlyChart = res.chart;
+  const years = {};
+  for (const r of monthlyData.rows) years[r.month.slice(0, 4)] = (years[r.month.slice(0, 4)] || 0) + r.energy_kwh;
+  document.getElementById('monthlySummary').textContent = res.months
+    ? 'Per year: ' + Object.entries(years).map(([y, v]) => `${y} ${Math.round(v).toLocaleString()} kWh`).join(' · ')
+    : 'No history yet.';
+  if (dev.retired) renderRetiredSummary();
+}
+
+function renderRetiredSummary() {
+  document.getElementById('liveTitle').textContent = 'Summary';
+  const r = dev.latest, rows = monthlyData ? monthlyData.rows : [];
+  const best = rows.reduce((b, x) => (!b || x.energy_kwh > b.energy_kwh ? x : b), null);
+  const full = {};  // only complete calendar years for the yearly average
+  for (const x of rows) (full[x.month.slice(0, 4)] ??= []).push(x.energy_kwh);
+  const complete = Object.values(full).filter(v => v.length === 12).map(v => v.reduce((a, b) => a + b, 0));
+  const stats = [
+    ['Total produced', r ? `${fmt(r.energy_total_kwh / 1000, 2)} MWh` : '—'],
+    ['In service (records)', dev.first_ts && r ? `${monthStr(dev.first_ts)} – ${monthStr(r.ts)}` : '—'],
+    ['Average per full year', complete.length ? `${Math.round(complete.reduce((a, b) => a + b, 0) / complete.length).toLocaleString()} kWh` : '—'],
+    ['Best month', best ? `${new Date(best.month + '-15').toLocaleDateString('en-NZ', { month: 'short', year: 'numeric' })} · ${fmt(best.energy_kwh, 0)} kWh` : '—'],
+  ];
+  document.getElementById('metrics').innerHTML =
+    (dev.notes ? `<p class="note" style="grid-column:1/-1">${esc(dev.notes)}</p>` : '') +
+    stats.map(([k, v]) => `<div class="metric"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+}
+
+async function loadEvents() {
+  const e = await getJSON(`api.php?action=events&device=${encodeURIComponent(id)}&limit=500`);
+  if (!e.counts.length) return;
+  document.getElementById('eventsSection').hidden = false;
+  const total = e.counts.reduce((s, c) => s + c.n, 0);
+  document.getElementById('eventsNote').textContent = `${total} events · latest ${e.recent.length} shown`;
+  document.getElementById('eventCounts').innerHTML = e.counts.map(c =>
+    `<tr><td>${esc(c.code)}</td><td class="num">${c.n}</td><td>${esc(dateTimeStr(c.last_ts))}</td></tr>`).join('');
+  document.getElementById('eventRecent').innerHTML = e.recent.map(x =>
+    `<tr><td>${esc(dateTimeStr(x.ts))}</td><td>${esc(x.code)}</td></tr>`).join('');
+}
+
+rangeButtons(n => { days = n; loadDaily(); });
+initCsvForm();
+
+loadDevice().then(() => {
+  if (!dev) return;
+  if (dev.retired && dev.latest) {
+    const last = new Date(dev.latest.ts * 1000);
+    document.getElementById('csvFrom').value = isoDate(new Date(dev.first_ts * 1000));
+    document.getElementById('csvTo').value = isoDate(last);
+    nav.start(last);
+  } else nav.start();
+  if (dev.type === 'battery') {  // no generation history to chart
+    document.querySelectorAll('[data-generation]').forEach(s => { s.hidden = true; });
+  } else { loadDaily(); loadMonthly(); }
+  loadEvents();
+});
+setInterval(() => { if (dev && !dev.retired) { loadDevice(); if (nav.isToday()) nav.refresh(); } }, 30000);
+</script>
+</body>
+</html>

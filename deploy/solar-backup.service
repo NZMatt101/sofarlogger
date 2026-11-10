@@ -1,0 +1,17 @@
+[Unit]
+Description=Solar logger automatic backup to Dropbox (when enabled in Admin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=solarcap
+Group=www-data
+UMask=0007
+ExecStart=/usr/bin/php /var/www/html/inc/auto-backup.php
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/solar-logger
+ProtectHome=true
+PrivateTmp=true
+Nice=10

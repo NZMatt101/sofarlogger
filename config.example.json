@@ -1,0 +1,6 @@
+{
+  "site": {"name": "Home Solar", "lat": -36.85, "lon": 174.76},
+  "poll_seconds": 60,
+  "store_every_seconds": 300,
+  "devices": []
+}

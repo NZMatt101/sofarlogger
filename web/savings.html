@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Savings</title>
+<link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+<noscript><div style="margin:8px 16px;padding:10px 14px;border:1px solid #c0392b;border-radius:8px;color:#c0392b">JavaScript is turned off in this browser, so live data and charts cannot load. Turn JavaScript on for this site (e.g. Samsung Internet: Settings, Sites and downloads, or disable content blockers for this site).</div></noscript>
+<header>
+  <div>
+    <div class="crumbs"><a href="./" id="siteLink">← Overview</a></div>
+    <h1>💰 Savings</h1>
+  </div>
+  <nav class="top"><a href="./">Overview</a> · <a href="green.html">🌿 Going Green</a> · <a href="admin/admin.php">Admin</a></nav>
+</header>
+<main>
+  <section class="card" id="noTariff" hidden>
+    <p class="note">No electricity prices set yet. Add your price per kWh in <a href="admin/admin.php#tariffs">Admin → Electricity prices</a>
+      and this page will show what your solar generation is worth.</p>
+  </section>
+
+  <section class="card kpis" id="kpis"></section>
+
+  <section class="card" id="paybackCard" hidden>
+    <div class="section-head"><h2>Payback</h2></div>
+    <div id="payback"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>Monthly savings</h2></div>
+    <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+    <div class="summary" id="rateNote"></div>
+  </section>
+
+  <section class="two-col">
+    <div class="card">
+      <div class="section-head"><h2>By year</h2></div>
+      <table class="events"><thead><tr><th>Year</th><th class="num">Generated</th><th class="num">Value</th><th class="num">Avg / kWh</th></tr></thead>
+        <tbody id="years"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="section-head"><h2>By equipment</h2></div>
+      <table class="events"><thead><tr><th>Equipment</th><th class="num">Generated</th><th class="num">Value</th></tr></thead>
+        <tbody id="devices"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script src="chart.umd.min.js?v=3"></script>
+<script src="common.js?v=3"></script>
+<script>
+let chart;
+async function load() {
+  const [site, s] = await Promise.all([getJSON('api.php?action=site'), getJSON('api.php?action=savings')]);
+  assignColors(site.devices);
+  document.title = `Savings · ${site.site.name}`;
+  document.getElementById('siteLink').textContent = '← ' + site.site.name;
+  const money = (v, d = 2) => s.symbol + Number(v || 0).toLocaleString('en-NZ', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const kwh = v => `${Number(v || 0).toLocaleString('en-NZ', { maximumFractionDigits: 1 })} kWh`;
+  document.getElementById('noTariff').hidden = s.periods.length > 0;
+  const t = s.totals;
+
+  document.getElementById('kpis').innerHTML = [
+    ['Today', t.today, t.kwh_today], ['This month', t.month, t.kwh_month],
+    ['This year', t.year, t.kwh_year], ['All time', t.all, t.kwh_all],
+  ].map(([k, v, e]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${money(v, v >= 1000 ? 0 : 2)}</div>
+     <div class="sub">${kwh(e)}</div></div>`).join('') +
+    `<div class="kpi"><div class="k">Current value</div><div class="v">${money(s.current_rate, 3)}</div><div class="sub">per kWh generated</div></div>`;
+
+  const p = s.payback;
+  if (p.cost > 0) {
+    const pct = Math.min(100, p.recovered / p.cost * 100);
+    const yrs = p.years_remaining;
+    document.getElementById('paybackCard').hidden = false;
+    document.getElementById('payback').innerHTML = `
+      <div class="kpis">
+        <div class="kpi"><div class="k">Installed cost (active)</div><div class="v">${money(p.cost, 0)}</div></div>
+        <div class="kpi"><div class="k">Recovered so far</div><div class="v">${money(p.recovered, 0)}</div><div class="sub">${pct.toFixed(1)}%</div></div>
+        <div class="kpi"><div class="k">Estimated time to payback</div><div class="v">${pct >= 100 ? 'Paid off' : yrs === null ? '—' : yrs.toFixed(1) + ' <small>years</small>'}</div>
+          <div class="sub">at ${money(p.annual_estimate, 0)}/year (site, last 365 days)</div></div>
+      </div>
+      <div class="bar" style="height:10px;margin-top:14px"><span style="width:${pct}%;background:var(--ok)"></span></div>` +
+      s.devices.filter(d => d.install_cost).map(d => `<div class="summary">${esc(d.name)}${d.retired ? ' (retired)' : ''}:
+        ${money(d.value, 0)} of ${money(d.install_cost, 0)} (${d.payback_pct.toFixed(0)}%)${d.install_date ? ' · installed ' + esc(d.install_date) : ''}</div>`).join('');
+  }
+
+  const names = Object.fromEntries(s.devices.map(d => [d.id, d.name]));
+  const monthly = { rows: s.monthly.map(r => ({ device: r.device, month: r.month, energy_kwh: r.value })) };
+  const res = renderMonthlyChart(document.getElementById('monthlyChart'), chart, monthly, names);
+  chart = res.chart;
+  chart.options.scales.y.title.text = s.symbol;
+  chart.options.plugins.tooltip.callbacks.label = i => `${i.dataset.label}: ${money(i.parsed.y)}`;
+  chart.update();
+  document.getElementById('rateNote').textContent = s.periods.length
+    ? 'Prices: ' + s.periods.map(x => `from ${x.from}: import ${money(x.import_rate, 3)}, export ${money(x.export_rate, 3)}, ${x.self_use_pct}% self-used`).join(' · ')
+    : '';
+
+  document.getElementById('years').innerHTML = s.yearly.slice().reverse().map(y => `<tr><td>${y.year}</td>
+    <td class="num">${kwh(y.kwh)}</td><td class="num">${money(y.value, 0)}</td>
+    <td class="num">${y.kwh ? money(y.value / y.kwh, 3) : '—'}</td></tr>`).join('');
+  document.getElementById('devices').innerHTML = s.devices.map(d => `<tr>
+    <td><span class="swatch" style="background:${colorFor(d.id)}"></span><a href="device.html?id=${encodeURIComponent(d.id)}">${esc(d.name)}</a>${d.retired ? ' <span class="badge retired">Retired</span>' : ''}</td>
+    <td class="num">${kwh(d.kwh)}</td><td class="num">${money(d.value, 0)}</td></tr>`).join('');
+}
+load();
+setInterval(load, 300000);
+</script>
+</body>
+</html>

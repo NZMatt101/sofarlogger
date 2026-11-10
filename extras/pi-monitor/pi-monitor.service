@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi monitor: solar, house, battery and grid on the 2.8" screen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=monitor
+SupplementaryGroups=spi gpio
+WorkingDirectory=/opt/pi-monitor
+ExecStart=/usr/bin/python3 /opt/pi-monitor/monitor.py --url http://solar-pi.local
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

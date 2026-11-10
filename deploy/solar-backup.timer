@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the solar logger backup check nightly
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

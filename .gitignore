@@ -1,0 +1,27 @@
+# Site data: never commit a real config, database, backups or credentials
+config.json
+!config.example.json
+*.db
+*.db-*
+*.sqlite
+*.htpasswd
+dropbox.json
+backup-status.json
+*.zip
+
+# Build output (releases are built by GitHub Actions)
+dist/
+
+# Python, editors, OS
+__pycache__/
+*.pyc
+*.code-workspace
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Pi monitor runtime state
+extras/pi-monitor/rotate.txt
+extras/pi-monitor/*.png
+!extras/pi-monitor/case/*.png

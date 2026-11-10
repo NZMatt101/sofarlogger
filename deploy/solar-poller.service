@@ -1,0 +1,22 @@
+[Unit]
+Description=SOFAR inverter logger poller
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+User=solarcap
+Group=www-data
+SupplementaryGroups=dialout
+UMask=0002
+ExecStart=/usr/bin/python3 /opt/solar-logger/collector/poller.py --config /etc/solar-logger/config.json --db /var/lib/solar-logger/solar.db
+Restart=always
+RestartSec=10
+StateDirectory=solar-logger
+StateDirectoryMode=0775
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

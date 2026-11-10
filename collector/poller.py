@@ -743,6 +743,83 @@ def pi_decide(opts, bms, inv, hold, last_full_ts, now):
     return "auto", hold, target, f"battery at {soc}%: normal operation" + (" (full charge due)" if target == 100 else "")
 
 
+# Time-of-use (TOU) slots: up to 10 per ME3000SP in config "tou", used only under Pi control. Each slot:
+# {"on": true, "name": "Night rate", "days": [0..6] (Mon = 0), "start": "HH:MM", "end": "HH:MM",
+#  "action": "charge" | "hold", "watts": 100..3000, "target_pct": 20..100}. A slot may run past midnight
+# (start later than end); its days are the days it starts on. Overlapping slots: the lowest number wins.
+TOU_MAX_SLOTS = 10
+TOU_RESUME_MARGIN_PCT = 3       # after reaching the target, charge again only once this far below it
+
+
+def tou_minutes(hhmm):
+    h, m = (int(x) for x in str(hhmm).split(":"))
+    if not (0 <= h < 24 and 0 <= m < 60):
+        raise ValueError(hhmm)
+    return h * 60 + m
+
+
+def tou_active(slots, lt):
+    """(slot number from 1, slot) for the first switched-on slot covering local time lt, else (None, None)."""
+    now_m, day, prev = lt.tm_hour * 60 + lt.tm_min, lt.tm_wday, (lt.tm_wday - 1) % 7
+    for num, s in enumerate((slots or [])[:TOU_MAX_SLOTS], 1):
+        if not s.get("on") or s.get("action") not in ("charge", "hold"):
+            continue
+        try:
+            a, b = tou_minutes(s["start"]), tou_minutes(s["end"])
+        except (KeyError, ValueError):
+            continue
+        days = set(s.get("days", range(7)))
+        if a < b:
+            hit = day in days and a <= now_m < b
+        elif a > b:   # runs past midnight
+            hit = (day in days and now_m >= a) or (prev in days and now_m < b)
+        else:
+            hit = False
+        if hit:
+            return num, s
+    return None, None
+
+
+def tou_decide(slot, num, bms, inv, done, max_charge_v):
+    """Pi choice inside a TOU slot: (command, watts, done, reason). Pure.
+
+    Called only after pi_decide found the BMS fresh and free of faults, so this only adds the slot's own stops.
+    done: the slot already reached its target (stay off until TOU_RESUME_MARGIN_PCT below it).
+    """
+    label = f"TOU {num}" + (f" ({slot['name']})" if slot.get("name") else "") + f" until {slot['end']}"
+    soc = bms["soc"]
+    net = (inv.get("gen_w") or 0) - (inv.get("load_w") or 0)
+    faults = [] if bms.get("faults", "None") == "None" else bms["faults"].split(", ")
+    blocked = None
+    if bms.get("charge_fet") == "No" or any("over-voltage" in f for f in faults):
+        blocked = "the BMS has stopped charging"
+    elif (bms.get("cell_max_v") or 0) >= PI_CELL_HIGH_V:
+        blocked = f"a cell reached {bms['cell_max_v']} V"
+    elif (inv.get("batt_v") or 0) >= max_charge_v:
+        blocked = f"battery reached {inv['batt_v']} V (limit {max_charge_v} V)"
+    elif inv.get("faults", "None") != "None":
+        blocked = f"inverter fault {inv['faults']}"
+
+    def keep(why):   # no discharging; spare solar may still charge it unless charging is blocked
+        if net > PI_DEADBAND_W and not blocked:
+            return "auto", None, done, f"{label}: {why}, charging from {net} W of spare solar"
+        return "standby", None, done, f"{label}: {why}"
+
+    if slot["action"] == "hold":
+        return keep(f"keeping the battery for later (at {soc}%)")
+    target = int(slot.get("target_pct", 100))
+    if soc >= target or blocked:
+        done = True
+    elif done and soc <= target - TOU_RESUME_MARGIN_PCT:
+        done = False
+    if blocked:
+        return keep(f"charging stopped: {blocked}")
+    if done:
+        return keep(f"battery at {soc}%, target {target}% reached")
+    watts = max(100, min(Me3000Control.MAX_WATTS, int(slot.get("watts", 1000))))
+    return "charge", watts, done, f"{label}: charging at {watts} W to {target}% (now {soc}%)"
+
+
 def migrate(db):
     """Add columns introduced after the first schema version."""
     cols = {r[1] for r in db.execute("PRAGMA table_info(devices)")}
@@ -1058,16 +1135,37 @@ class Poller:
         if bms and bms.get("soc", 0) >= 100 and now - bms["ts"] <= PI_BMS_MAX_AGE:
             st["last_full"] = now
         want, hold, target, reason = pi_decide(pi_settings(dev), bms, inv, st["hold"], st["last_full"], now)
-        if hold != st["hold"]:
+        num, slot = tou_active(dev.get("tou"), time.localtime(now))
+        if hold != st["hold"] and not (slot and target is not None):   # a TOU slot logs its own events
             self.control_event(dev["id"], now, f"Pi control: {reason}")
         st["hold"], st["reason"] = hold, reason
         if target is not None:
             st["target"] = target
         safety = target is None   # missing BMS data or BMS protection: act at once
+
+        # Time-of-use slot: overrides normal Pi control, but never pi_decide's safety standby.
+        action, watts = want, None
+        if num != st.get("tou_num"):
+            if num:
+                what = (f"charge from the grid at {slot.get('watts')} W to {slot.get('target_pct')}%"
+                        if slot["action"] == "charge" else "keep the battery (no discharging)")
+                self.control_event(dev["id"], now, f"TOU {num}{' (' + slot['name'] + ')' if slot.get('name') else ''} "
+                                                   f"started: {what} until {slot['end']}")
+            else:
+                self.control_event(dev["id"], now, f"TOU {st['tou_num']} ended: back to normal Pi control")
+            st["tou_num"], st["tou_done"] = num, False
+        if slot and not safety:
+            action, watts, st["tou_done"], reason = tou_decide(
+                slot, num, bms, inv, st.get("tou_done", False), float(dev.get("max_charge_v", DEFAULT_MAX_CHARGE_V)))
+            st["reason"] = reason
+            want = action if watts is None else f"{action} {watts}"   # what st["sent"] records
+        # Stopping a grid charge is always immediate, like a safety change.
+        safety = safety or (str(st["sent"] or "").startswith("charge") and action != "charge")
+
         due = st["sent"] is None or now - st["sent_ts"] >= (PI_RESEND_SECONDS if want == st["sent"] else PI_MIN_SWITCH_SECONDS)
         if want != st["sent"] and (safety or due) or want == st["sent"] and due:
             try:
-                result, flags = Me3000Control.send(dev, want)
+                result, flags = Me3000Control.send(dev, action, watts)
             except PollError as e:
                 result, flags = None, 0
                 self.pi_problem(dev, st, f"command not delivered ({e.detail})", now)

@@ -44,6 +44,24 @@ The Pi never sets a charge or discharge power itself.
 - If the inverter refuses because it isn't in Passive mode, or stops answering, the battery page shows the
   problem.
 
+## Time-of-use schedule
+
+On the battery page, **Time-of-use** (`admin/tou.php`) holds up to 10 slots, so you can charge from the grid when
+power is cheap. It only runs under Pi control. Each slot has days, a start and end time (it can run past
+midnight; its days are the days it starts on), and one of two actions:
+
+| Action | During the slot |
+|---|---|
+| **Charge from grid** | Charges at the set power (100–3,000 W), from the grid if there isn't enough solar, until the BMS reaches the slot's *charge to* %. It then holds the battery (no discharging) for the rest of the slot, and tops up again if it falls 3% below. |
+| **Keep battery** | No discharging, so the charge is saved for an expensive period later; spare solar can still charge it. |
+
+- Outside the slots, normal Pi control applies. If slots overlap, the lower-numbered one wins.
+- Charging stops at once if the BMS reading goes missing or it reports a protection, a cell reaches 3.55 V, the
+  pack reaches the battery page's "stop charging" voltage, or the inverter reports a fault.
+- Grid charging adds to the house load on your main fuse: allow for that when choosing the power.
+- Slot starts and ends are recorded in the battery page's control events.
+- Times are the Pi's local time, shown at the top of the page.
+
 ## Turning it on
 
 1. Add the ME3000SP and the battery BMS in Admin → Equipment, and check the readings look right.

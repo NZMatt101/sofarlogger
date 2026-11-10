@@ -175,7 +175,7 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
     <div class="crumbs"><a href="../device.html?id=<?= h(rawurlencode($id)) ?>">← <?= h($dev['name']) ?></a></div>
     <h1>🔋 Battery control</h1>
   </div>
-  <nav class="top"><a href="admin.php#dev-<?= h($id) ?>">Equipment settings</a></nav>
+  <nav class="top"><a href="tou.php?id=<?= h(rawurlencode($id)) ?>">Time-of-use</a> <a href="admin.php#dev-<?= h($id) ?>">Equipment settings</a></nav>
 </header>
 <main>
 <?php foreach ($flashes as [$type, $msg]): ?>
@@ -215,7 +215,9 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
     <p class="warn"><strong>Problem:</strong> <?= h($piState['problem']) ?></p>
 <?php endif; ?>
     <dl class="info">
-      <dt>Inverter told to</dt><dd><?= $piState['sent'] ? h($piState['sent'] === 'auto' ? 'Auto (follows the house load)' : 'Standby') . ' since ' . h(date('H:i', $piState['sent_ts'])) : '—' ?></dd>
+      <dt>Inverter told to</dt><dd><?= $piState['sent'] ? h($piState['sent'] === 'auto' ? 'Auto (follows the house load)'
+          : ($piState['sent'] === 'standby' ? 'Standby' : 'Charge from the grid at ' . (int)substr($piState['sent'], 7) . ' W'))
+          . ' since ' . h(date('H:i', $piState['sent_ts'])) : '—' ?></dd>
       <dt>Why</dt><dd><?= h($piState['reason'] ?? '—') ?></dd>
       <dt>Charging up to</dt><dd><?= $piState['target_pct'] ? h($piState['target_pct']) . '%' . ($piState['target_pct'] == 100 ? ' (full charge, to recalibrate the BMS and balance the cells)' : '') : '—' ?></dd>
       <dt>Last full charge</dt><dd><?= $piState['last_full_ts'] ? h(date('j M H:i', $piState['last_full_ts'])) : 'not seen yet' ?></dd>
@@ -232,6 +234,9 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
       <strong>Inverter:</strong> the inverter runs itself (screen Work Mode = Auto) and judges charge from voltage, which on this battery type stops discharge early and can latch a low-battery alarm.<br>
       <strong>Pi:</strong> the inverter screen must be in <strong>Passive mode</strong>. The Pi uses the BMS's charge level: normally it lets the inverter follow the house load; at the floor it only charges from spare solar; at the ceiling it only discharges. If the BMS reading is missing or the BMS reports a protection, it puts the inverter in standby. If the Pi stops altogether, the inverter keeps its last mode and its own voltage limits still apply, so keep them set as a backstop.
     </p>
+<?php $touOn = count(array_filter($dev['tou'] ?? [], fn($s) => !empty($s['on']))); ?>
+    <p><a href="tou.php?id=<?= h(rawurlencode($id)) ?>">🕒 Time-of-use schedule</a>
+      <span class="help">: <?= $touOn ? h($touOn) . ' slot' . ($touOn === 1 ? '' : 's') . ' on' . ($piMode ? '' : ' (runs only under Pi control)') : 'none set' ?>. Charge from the grid at cheap times, or keep the battery for later.</span></p>
     <form class="grid" method="post" action="<?= h($self) ?>#controller">
       <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="controller">
       <label>Controller

@@ -18,7 +18,8 @@ Nothing is sent to the internet unless you turn it on.
 - **Battery BMS over RS485 (JBD / "Smart BMS"):** true charge %, all cell voltages, temperatures, balancing
   and faults. The inverter's own % can be badly wrong when it isn't talking to the BMS.
 - **Pi battery control (optional, off by default):** keeps the battery between a floor and a ceiling you set
-  (for example 20% and 95%), with a full charge every few days to rebalance the cells. See
+  (for example 20% and 95%), with a full charge every few days to rebalance the cells, and a **time-of-use
+  schedule** (up to 10 slots) to charge from the grid when power is cheap. See
   [docs/battery-control.md](docs/battery-control.md).
 - **Admin page** (password protected): equipment, prices, history import, backups to Dropbox.
 - **Reliability:** watchdogs and network recovery for unattended running.

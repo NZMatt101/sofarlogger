@@ -29,7 +29,7 @@ Nothing is sent to the internet unless you turn it on.
 | Equipment | Connection | Notes |
 |---|---|---|
 | SOFAR TL/TLM solar inverters | Wi-Fi logger stick (IGEN / "omnik" style) | Read over the home network by IP and serial |
-| SOFAR ME3000SP | USB to RS485 adapter on the Pi | Tested on software V300 |
+| SOFAR ME3000SP | [USB to RS485 adapter](https://link.amazon/B09KdWDPi) on the Pi | Tested on software V300 |
 | Battery BMS (JBD protocol) | Second USB to RS485 adapter | Tested on a 16-cell 280 Ah LiFePO4 pack |
 
 Other equipment needs a new driver in `collector/poller.py`. Wiring and adapter notes:

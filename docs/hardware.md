@@ -9,8 +9,9 @@ SOFAR TL/TLM inverters with an IGEN / "omnik"-style Wi-Fi logger stick. The Pi p
 ## RS485 basics
 
 - RS485 is **not** crossed: A goes to A (also called D+, 485+), B goes to B (D-, 485-).
-- A plain USB to RS485 adapter (CH340 or FTDI) is fine. Many have no GND terminal; two wires work over the
-  short runs here.
+- A plain USB to RS485 adapter (CH340 or FTDI) is fine. The one used on the test system:
+  [USB to RS485 adapter (Amazon)](https://link.amazon/B09KdWDPi). You need one per device, so two for an
+  ME3000SP plus a BMS. Many have no GND terminal; two wires work over the short runs here.
 - 9600 baud, 8 data bits, no parity, 1 stop bit, for both the ME3000SP and the BMS.
 - Use one adapter per device. Two identical CH340 adapters share one `/dev/serial/by-id/` name, so pick
   the port in Admin by its `/dev/serial/by-path/...` name, which is fixed by the USB socket it's plugged

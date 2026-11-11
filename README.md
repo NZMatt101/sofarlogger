@@ -23,7 +23,8 @@ Nothing is sent to the internet unless you turn it on.
   [docs/battery-control.md](docs/battery-control.md).
 - **Admin page** (password protected): equipment, prices, history import, backups to Dropbox.
 - **Reliability:** watchdogs and network recovery for unattended running.
-- **Extras:** [a small always-on screen](extras/pi-monitor/) on a second Pi, with a printable case.
+- **Extras:** [a small always-on screen](extras/pi-monitor/) on a second Pi, with a printable case
+  ([also on Thingiverse](https://www.thingiverse.com/thing:7433627)).
 
 ## Supported equipment
 

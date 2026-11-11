@@ -88,6 +88,8 @@ with `--dc`, `--rst` (`-1` if none) and `--bl`.
 
 ## Case
 
+Also on Thingiverse: https://www.thingiverse.com/thing:7433627
+
 `case/pi3-28hat-case.scad` is a two-part printable case for the Pi 3B with this HAT: a base tray (Pi on four
 standoffs, openings for power, HDMI, audio, Ethernet, USB and the SD card, floor vents) and a lid with a
 window for the screen and holes for K1–K3. The lid's skirt slips over a stepped rim on the base.

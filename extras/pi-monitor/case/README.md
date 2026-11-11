@@ -1,5 +1,7 @@
 # Raspberry Pi 3B case for a 2.8" ILI9341 display HAT (solar monitor)
 
+On Thingiverse: https://www.thingiverse.com/thing:7433627
+
 A two-part case for a **Raspberry Pi 3 Model B** with a plug-on **2.8" ILI9341 SPI display HAT** (the common
 "2.4/2.8inch RPi Display" board with XPT2046 touch and three side buttons, K1–K3). I made it for a small
 always-on screen that shows a home solar and battery system at a glance, but it suits any project using this

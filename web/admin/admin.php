@@ -197,6 +197,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $d['retired'] = !empty($_POST['retired']);
             if ($d['driver'] === 'me3000') {
                 [$d['port'], $d['slave']] = rs485_settings($_POST);
+                $bms = (string)($_POST['bms'] ?? '');
+                $bmsIds = array_column(array_filter($cfg['devices'], fn($x) => $x['driver'] === 'jbd' && empty($x['retired'])), 'id');
+                if ($bms !== '' && !in_array($bms, $bmsIds, true)) throw new InvalidArgumentException('Unknown battery BMS');
+                foreach ($cfg['devices'] as $other)
+                    if ($bms !== '' && $other['id'] !== $d['id'] && $other['driver'] === 'me3000' && empty($other['retired'])
+                        && linked_bms_id($cfg, $other) === $bms)
+                        throw new InvalidArgumentException("That BMS is already the battery for {$other['name']}. Each battery belongs to one inverter.");
+                $hasCt = !empty($_POST['has_ct']);
+                if (!$hasCt && ($d['controller'] ?? 'inverter') === 'pi' && empty($d['pair']))
+                    throw new InvalidArgumentException('This unit is under Pi control, which needs its CT. Switch it back to inverter control on its battery page first.');
+                $d['bms'] = $bms;
+                $d['has_ct'] = $hasCt;
+                unset($d['pi_control']['bms']);   // the link above replaces Pi control's own copy
             } elseif ($d['driver'] === 'jbd') {
                 $d['port'] = rs485_port($_POST);
             } elseif ($d['driver'] !== 'import') {
@@ -606,8 +619,22 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
         <label>Rated power (W) <input name="rated_w" type="number" min="0" value="<?= h($d['rated_w'] ?? '') ?>"></label>
 <?php if ($rs485): ?>
         <label>Serial port <input name="port" list="serial-ports" value="<?= h($d['port'] ?? '/dev/ttyUSB0') ?>" required></label>
-<?php if ($d['driver'] === 'me3000'): ?>
+<?php if ($d['driver'] === 'me3000'): $myBms = linked_bms_id($cfg, $d); ?>
         <label>RS485 address <input name="slave" type="number" min="1" max="247" value="<?= h($d['slave'] ?? 1) ?>" required></label>
+        <label>Battery BMS
+          <select name="bms">
+            <option value="">None</option>
+<?php foreach ($cfg['devices'] as $b): if ($b['driver'] !== 'jbd' || !empty($b['retired'])) continue; ?>
+            <option value="<?= h($b['id']) ?>"<?= $myBms === $b['id'] ? ' selected' : '' ?>><?= h($b['name']) ?></option>
+<?php endforeach; ?>
+          </select></label>
+        <label class="check" title="The ME3000SP's current clamp, on the grid cable. Needed for it to follow the house load by itself.">
+          <input type="checkbox" name="has_ct" value="1"<?= ($d['has_ct'] ?? true) ? ' checked' : '' ?>> CT fitted (on the grid cable)</label>
+<?php elseif ($d['driver'] === 'jbd'):
+        $owner = null;
+        foreach ($cfg['devices'] as $m) if ($m['driver'] === 'me3000' && empty($m['retired']) && linked_bms_id($cfg, $m) === $d['id']) $owner = $m; ?>
+        <p class="help wide" style="margin:0">Battery for: <?= $owner ? '<a href="#dev-' . h($owner['id']) . '">' . h($owner['name']) . '</a>'
+          : 'no battery inverter yet. Choose it under "Battery BMS" on the inverter\'s entry.' ?></p>
 <?php endif; ?>
 <?php elseif (!$imported): ?>
         <label>Logger IP <input name="ip" value="<?= h($d['ip'] ?? '') ?>" required></label>

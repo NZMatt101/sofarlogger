@@ -696,6 +696,21 @@ PI_CELL_LOW_V = 2.90            # any cell at or below: treat as the floor whate
 PI_CELL_HIGH_V = 3.55           # any cell at or above: treat as the ceiling
 
 
+def linked_bms_id(cfg, dev):
+    """The battery BMS an ME3000SP is linked to (same rule as inc/common.php linked_bms_id): its "bms" setting if
+    present ("" = none), else the older Pi-control setting, else the only BMS when the site has exactly one
+    ME3000SP and one BMS. Returns a device id or None."""
+    active = [d for d in cfg.get("devices", []) if not d.get("retired")]
+    bms_ids = [d["id"] for d in active if d["driver"] == "jbd"]
+    if "bms" in dev:
+        return dev["bms"] if dev["bms"] in bms_ids else None
+    old = (dev.get("pi_control") or {}).get("bms")
+    if old in bms_ids:
+        return old
+    mes = [d for d in active if d["driver"] == "me3000"]
+    return bms_ids[0] if len(mes) == 1 and len(bms_ids) == 1 else None
+
+
 def pi_settings(dev):
     return {**PI_DEFAULTS, **(dev.get("pi_control") or {})}
 
@@ -854,6 +869,7 @@ class Poller:
         self.day_state = {}    # device id -> {day, acc, base, last_raw}; see local_today()
         self.control_timers = {}  # device id -> {hb, guard, fails, retry}
         self.pi_state = {}        # device id -> Pi control state; see pi_tick()
+        self.pi_skipped = set()   # Pi-control devices control_tick won't run (no CT, or a second unit)
         self.reload_config()
         # After a restart the clock may be wrong and nobody was guarding a timed run, so end it. Standby is safe to keep.
         self.db.execute("UPDATE control_state SET stopping = 'Logger restarted during a timed run' "
@@ -1075,11 +1091,8 @@ class Poller:
                 log.warning("%s: heartbeat failed: %s", dev["id"], e)
 
     def pi_bms(self, dev):
-        """Latest values from the BMS this inverter's Pi control uses (the configured one, else the only JBD BMS)."""
-        bms_id = pi_settings(dev).get("bms")
-        if not bms_id:
-            ids = [d["id"] for d in self.cfg["devices"] if d["driver"] == "jbd" and not d.get("retired")]
-            bms_id = ids[0] if len(ids) == 1 else None
+        """Latest values from the battery BMS linked to this inverter (see linked_bms_id)."""
+        bms_id = linked_bms_id(self.cfg, dev)
         if not bms_id:
             return None
         row = self.db.execute("SELECT ts, live FROM device_snapshot WHERE device = ?", (bms_id,)).fetchone()
@@ -1202,7 +1215,17 @@ class Poller:
         """Run queued commands and guard any manual run. Does nothing on sites without a battery inverter."""
         devs = {d["id"]: d for d in self.cfg["devices"] if d["driver"] == "me3000"}
         now = int(time.time())
-        pi_devs = {i for i, d in devs.items() if d.get("controller") == "pi" and not d.get("retired")}
+        pi_devs = [i for i, d in devs.items() if d.get("controller") == "pi" and not d.get("retired")]
+        # Standalone Pi control follows the unit's own CT in passive Auto, so it needs a CT, and two such units on
+        # one grid cable would fight. Until they're paired, run only the first unit with a CT; leave the rest alone
+        # (no commands, not even the hand-back Auto). The admin page refuses these settings too: this is a backstop.
+        runnable = [i for i in pi_devs if devs[i].get("has_ct", True)][:1]
+        for dev_id in pi_devs:
+            if dev_id not in runnable and dev_id not in self.pi_skipped:
+                self.pi_skipped.add(dev_id)
+                why = "it has no CT" if not devs[dev_id].get("has_ct", True) else "another ME3000SP is already under Pi control"
+                self.control_event(dev_id, now, f"Pi control not started: {why}")
+        self.pi_skipped &= set(pi_devs) - set(runnable)
         for dev_id in [r[0] for r in self.db.execute("SELECT device FROM pi_control")]:
             if dev_id not in pi_devs:
                 self.pi_off(dev_id, devs, now)
@@ -1225,7 +1248,7 @@ class Poller:
             if device in devs:
                 self.control_watch(devs[device], mode, until, stopping, now)
         manual = {s[0] for s in states}
-        for dev_id in pi_devs:
+        for dev_id in runnable:
             self.pi_tick(devs[dev_id], now, dev_id in manual)
         self.db.commit()
 

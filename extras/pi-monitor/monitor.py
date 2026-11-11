@@ -40,29 +40,71 @@ def fetch(url, timeout=8):
 
 
 def summarise(site):
-    """The few figures the screen shows, from the logger's site JSON. Missing values are None."""
+    """The figures the screen shows, from the logger's site JSON. Missing values are None.
+
+    Each ME3000SP has a linked BMS (the API's "bms" field). With two units, the one with a CT gives the grid and
+    house figures, and the other unit's output is added to the house load.
+    """
     devs = [d for d in site.get("devices", []) if not d.get("retired")]
     inverters = [d for d in devs if d.get("type") == "inverter"]
-    me = next((d for d in devs if d.get("driver") == "me3000"), None)
-    bms = next((d for d in devs if d.get("driver") == "jbd"), None)
+    mes = [d for d in devs if d.get("driver") == "me3000"]
+    bmss = [d for d in devs if d.get("driver") == "jbd"]
+    by_id = {d["id"]: d for d in devs}
     data = lambda d: ((d or {}).get("latest") or {}).get("data") or {}
     online = lambda d: bool(d) and d.get("state") == "online"
 
+    def bms_of(m):
+        if "bms" in m:
+            return by_id.get(m["bms"])
+        return bmss[0] if len(mes) == 1 and len(bmss) == 1 else None   # older logger API
+
     solar = site.get("totals", {}).get("power_w") if any(online(d) for d in inverters) else None
     night = bool(inverters) and all(d.get("state") == "night" for d in inverters)
-    bat_src = bms if online(bms) else me if online(me) else None
+    ct = next((m for m in mes if m.get("has_ct", True) and online(m)), None)
+    house = data(ct).get("load_w") if ct else None
+    if house is not None:
+        house += sum(data(m).get("inverter_w") or 0 for m in mes if m is not ct and online(m))
+
+    linked = {id(bms_of(m)) for m in mes if bms_of(m)}
+    packs = [(m["name"], m, bms_of(m)) for m in mes] + [(b["name"], None, b) for b in bmss if id(b) not in linked]
+    batteries = []
+    for name, m, b in packs:
+        src = b if online(b) else m if online(m) else None
+        bd = data(b) if online(b) else None
+        batteries.append({
+            "name": name,
+            "soc": data(src).get("soc") if src else None,
+            "soc_source": "BMS" if src is not None and src is b else "inverter",
+            "batt_w": data(src).get("batt_power_w") if src else None,   # + charging / - discharging
+            "bms": bd,                                                   # everything the BMS reports
+            "inv_soc": data(m).get("soc") if online(m) else None,
+            "kwh": bd["remaining_ah"] * bd["batt_v"] / 1000 if bd and bd.get("remaining_ah") and bd.get("batt_v") else None,
+            "full_kwh": bd["full_ah"] * 51.2 / 1000 if bd and bd.get("full_ah") else None,
+        })
+    # Main screen: one battery as is; several combined (weighted by capacity when every one has a BMS reading).
+    if len(batteries) == 1:
+        soc, src, bw = batteries[0]["soc"], batteries[0]["soc_source"], batteries[0]["batt_w"]
+    elif batteries:
+        known = [x for x in batteries if x["soc"] is not None]
+        if all(x["kwh"] is not None and x["full_kwh"] for x in batteries):
+            soc, src = round(100 * sum(x["kwh"] for x in batteries) / sum(x["full_kwh"] for x in batteries)), "BMS"
+        else:
+            soc, src = (round(sum(x["soc"] for x in known) / len(known)) if known else None), "inverter"
+        ws = [x["batt_w"] for x in batteries if x["batt_w"] is not None]
+        bw = sum(ws) if ws else None
+    else:
+        soc, src, bw = None, "inverter", None
+    faults = [f for f in [x["bms"].get("faults") for x in batteries if x["bms"]] + [data(m).get("faults") for m in mes]
+              if f and f != "None"]
     return {
         "name": site.get("site", {}).get("name", "Solar"),
         "solar_w": 0 if night else solar,
         "solar_today": site.get("totals", {}).get("energy_today_kwh"),
-        "house_w": data(me).get("load_w") if online(me) else None,
-        "grid_w": data(me).get("grid_w") if online(me) else None,       # + export / - import
-        "soc": data(bat_src).get("soc") if bat_src else None,
-        "soc_source": "BMS" if bat_src is bms and bms else "inverter",
-        "batt_w": data(bat_src).get("batt_power_w") if bat_src else None,  # + charging / - discharging
-        "faults": next((f for f in (data(bms).get("faults"), data(me).get("faults")) if f and f != "None"), None),
-        "bms": data(bms) if online(bms) else None,     # everything the BMS reports, for the battery page
-        "inv_soc": data(me).get("soc") if online(me) else None,
+        "house_w": house,
+        "grid_w": data(ct).get("grid_w") if ct else None,       # + export / - import
+        "soc": soc, "soc_source": src, "batt_w": bw,
+        "faults": faults[0] if faults else None,
+        "batteries": batteries,
     }
 
 
@@ -135,8 +177,15 @@ def footer(d, fonts, s, updated, error, extra=None):
         d.text((W - 10, H - 20), extra, font=fonts["small"], fill=MUTED, anchor="ra")
 
 
+def page_count(s):
+    """Main page plus one battery page per battery (at least one, which says so when there's no BMS)."""
+    return 1 + max(1, len((s or {}).get("batteries") or []))
+
+
 def render(s, fonts, updated, error=None, page=0):
-    return (render_main, render_battery)[page](s, fonts, updated, error)
+    if page == 0:
+        return render_main(s, fonts, updated, error)
+    return render_battery(s, fonts, updated, error, page - 1)
 
 
 def render_main(s, fonts, updated, error=None):
@@ -183,13 +232,20 @@ def render_main(s, fonts, updated, error=None):
     return img
 
 
-def render_battery(s, fonts, updated, error=None):
-    """Battery detail from the BMS: charge, energy stored, the 16 cell voltages, temperatures and status."""
+def render_battery(s, fonts, updated, error=None, index=0):
+    """Battery detail from its BMS: charge, energy stored, the 16 cell voltages, temperatures and status."""
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    header(d, fonts, "Battery")
     s = s or {}
-    b = s.get("bms")
+    packs = s.get("batteries") or []
+    pack = packs[index] if index < len(packs) else {}
+    title = "Battery"
+    if len(packs) > 1:   # name it, shortened to fit beside the clock
+        title = f"{index + 1}: {pack.get('name', '')}"
+        while len(title) > 4 and d.textlength(title, font=fonts["mid"]) > W - 90:
+            title = title[:-2] + "…"
+    header(d, fonts, title)
+    b = pack.get("bms")
     if not b:
         d.text((W // 2, H // 2), "No BMS reading", font=fonts["mid"], fill=MUTED, anchor="mm")
         footer(d, fonts, s, updated, error)
@@ -215,7 +271,7 @@ def render_battery(s, fonts, updated, error=None):
     rem, full = f("remaining_ah"), f("full_ah")
     if rem is not None and full and v:
         d.text((tx, y0 + 28), f"{rem * v / 1000:.1f} of {full * 51.2 / 1000:.1f} kWh", font=fonts["small"], fill=TEXT)
-    inv = s.get("inv_soc")
+    inv = pack.get("inv_soc")
     d.text((tx, y0 + 46), f"Inverter estimate {inv}%" if inv is not None else "", font=fonts["small"], fill=MUTED)
 
     # Cells: 2 rows of 8, lowest outlined blue, highest amber
@@ -398,8 +454,8 @@ def main():
     ap.add_argument("--rotate-button", type=int, default=23,
                     help="GPIO of the HAT button that flips the picture 180° (K1-K3 are GPIO18, 23, 24); -1 = none")
     ap.add_argument("--page-buttons", default="18,24",
-                    help="GPIOs of the buttons that switch between the main and battery pages (K1, K3); '' = none")
-    ap.add_argument("--page", type=int, choices=(0, 1), default=0, help="start page: 0 main, 1 battery")
+                    help="GPIOs of the page buttons: the first goes back, the others forward (K1, K3); '' = none")
+    ap.add_argument("--page", type=int, default=0, help="start page: 0 main, 1 first battery, 2 second ...")
     ap.add_argument("--font-dir", help="folder with DejaVuSans fonts (default: system fonts)")
     ap.add_argument("--png", help="save the screen image to this file instead of using the display")
     ap.add_argument("--once", action="store_true", help="draw one update and exit")
@@ -436,6 +492,7 @@ def main():
             last, updated = summarise(fetch(args.url)), time.time()
         except Exception as e:   # keep showing the last figures, greyed by the footer, until the logger is back
             error = str(getattr(e, "reason", e)) or type(e).__name__
+        page %= page_count(last)   # the number of batteries can change
         img = render(last, fonts, updated, error, page)
         if args.png:
             img.save(args.png)
@@ -456,8 +513,10 @@ def main():
                         f.write(str(rotate))
                 except OSError as e:
                     print(f"Couldn't save the rotation: {e}", flush=True)
-            if any([b.pressed() for b in page_buttons]):   # list, so every button's state is read
-                page = 1 - page
+            presses = [b.pressed() for b in page_buttons]   # read every button each time
+            if any(presses):   # first page button goes back, any other goes forward
+                step = -1 if presses[0] and len(presses) > 1 else 1
+                page = (page + step) % page_count(last)
                 img = render(last, fonts, updated, error, page)
                 screen.show(img)
                 previous = img.tobytes()

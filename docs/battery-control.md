@@ -65,6 +65,23 @@ midnight; its days are the days it starts on), and one of two actions:
 - Slot starts and ends are recorded in the battery page's control events.
 - Times are the Pi's local time, shown at the top of the page.
 
+## Two ME3000SP units
+
+You can add a second ME3000SP in Admin → Equipment: give it its own USB adapter, or put it on the same RS485 bus
+with a different address (set on its screen). On each unit's entry:
+
+- **Battery BMS:** the BMS of that unit's own battery. Each BMS belongs to one unit. Pi control, the battery page,
+  the overview and the Pi monitor all use this link. (With one unit and one BMS it's linked automatically.)
+- **CT fitted:** tick it when the unit's current clamp is on the grid cable.
+
+Showing two units: the overview's Battery card lists each battery with a combined charge and kWh stored, and the
+House figure adds the second unit's output to the CT unit's reading. The Pi monitor gets a page per battery.
+
+**Control, for now:** only one unit can be under standalone Pi control. In passive Auto a unit follows its own
+CT, so two of them on one grid cable would fight, and a unit without a CT can't follow the load at all. The
+battery page refuses those settings, and the poller won't run them. Running two units together (the second as
+an evening reserve that takes over when the first is empty) is being built as a paired mode.
+
 ## Turning it on
 
 1. Add the ME3000SP and the battery BMS in Admin → Equipment, and check the readings look right.

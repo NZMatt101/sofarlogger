@@ -37,6 +37,19 @@ function load_config() {
     return is_array($cfg) ? $cfg : ['devices' => []];
 }
 
+// The battery BMS an ME3000SP is linked to (same rule as poller.py linked_bms_id): its "bms" setting if present
+// ('' = none), else the older Pi-control setting, else the only BMS when the site has exactly one ME3000SP and
+// one BMS. Returns a device id or null.
+function linked_bms_id($cfg, $dev) {
+    $active = array_filter($cfg['devices'] ?? [], fn($d) => empty($d['retired']));
+    $bmsIds = array_values(array_column(array_filter($active, fn($d) => $d['driver'] === 'jbd'), 'id'));
+    if (array_key_exists('bms', $dev)) return in_array($dev['bms'], $bmsIds, true) ? $dev['bms'] : null;
+    $old = $dev['pi_control']['bms'] ?? null;
+    if ($old && in_array($old, $bmsIds, true)) return $old;
+    $mes = array_filter($active, fn($d) => $d['driver'] === 'me3000');
+    return count($mes) === 1 && count($bmsIds) === 1 ? $bmsIds[0] : null;
+}
+
 // Atomic write: the poller reloads the file when its mtime changes.
 function save_config($cfg) {
     $json = json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

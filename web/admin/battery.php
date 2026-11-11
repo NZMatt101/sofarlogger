@@ -27,7 +27,14 @@ $floor = (float)($dev['min_discharge_v'] ?? DEFAULT_MIN_DISCHARGE_V);
 $ceiling = (float)($dev['max_charge_v'] ?? DEFAULT_MAX_CHARGE_V);
 $piMode = ($dev['controller'] ?? 'inverter') === 'pi';
 $pi = array_merge(PI_DEFAULTS, $dev['pi_control'] ?? []);
-$bmsDevices = array_values(array_filter($cfg['devices'], fn($d) => $d['driver'] === 'jbd' && empty($d['retired'])));
+$bmsId = linked_bms_id($cfg, $dev);   // set in Admin → Equipment, "Battery BMS"
+$bmsName = null;
+foreach ($cfg['devices'] as $d) if ($d['id'] === $bmsId) $bmsName = $d['name'];
+$hasCt = $dev['has_ct'] ?? true;
+// Another ME3000SP already under standalone Pi control (two would fight over the same grid CT).
+$otherPi = null;
+foreach ($cfg['devices'] as $d)
+    if ($d['driver'] === 'me3000' && $d['id'] !== $id && empty($d['retired']) && ($d['controller'] ?? '') === 'pi' && empty($d['pair'])) $otherPi = $d;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
@@ -43,10 +50,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'full_every_days' => $int('full_every_days', 0, 30, 'Full charge interval'),
                         'full_spread_mv' => $int('full_spread_mv', 10, 200, 'Cell spread')];
                 if ($new['floor_pct'] > $new['ceiling_pct'] - 20) throw new InvalidArgumentException('Keep the floor at least 20% below the ceiling.');
-                $bms = $_POST['bms'] ?? '';
-                if ($bmsDevices && !in_array($bms, array_column($bmsDevices, 'id'), true)) throw new InvalidArgumentException('Choose the battery BMS to follow.');
-                if ($mode === 'pi' && !$bmsDevices) throw new InvalidArgumentException('Pi control needs a battery BMS in the equipment list.');
-                $new['bms'] = $bms;
+                if ($mode === 'pi') {
+                    if (!$bmsId) throw new InvalidArgumentException('Pi control needs this inverter\'s battery BMS: choose it under "Battery BMS" in Admin → Equipment.');
+                    if (!$hasCt) throw new InvalidArgumentException('This unit has no CT, so it can\'t follow the house load by itself. It can only be controlled as the second unit of a pair.');
+                    if ($otherPi) throw new InvalidArgumentException("{$otherPi['name']} is already under Pi control. Two units on the same grid CT would fight; pair them instead.");
+                }
+                // Keep the BMS link when replacing pi_control (older configs kept it only in there).
+                if (!array_key_exists('bms', $cfg['devices'][$index])) $cfg['devices'][$index]['bms'] = $bmsId ?? '';
                 $cfg['devices'][$index]['controller'] = $mode;
                 $cfg['devices'][$index]['pi_control'] = $new;
                 save_config($cfg);
@@ -130,7 +140,6 @@ try {
         $st->bindValue(':d', $id);
         $piState = rows($st)[0] ?? null;
     }
-    $bmsId = $pi['bms'] ?? ($bmsDevices[0]['id'] ?? null);
     if ($bmsId) {
         $st = $db->prepare('SELECT ts, live FROM device_snapshot WHERE device = :d');
         $st->bindValue(':d', $bmsId);
@@ -156,7 +165,7 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
 <link rel="stylesheet" href="../style.css?v=3">
 <style>
   form.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px 14px; align-items: end; }
-  form.grid label { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+  form.grid label, form.grid .field { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
   form.grid input, form.grid select { width: 100%; color: var(--text); }
   .flash { margin: 0 0 12px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); }
   .flash.ok { border-color: var(--good, #1f9d55); }
@@ -234,6 +243,10 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
       <strong>Inverter:</strong> the inverter runs itself (screen Work Mode = Auto) and judges charge from voltage, which on this battery type stops discharge early and can latch a low-battery alarm.<br>
       <strong>Pi:</strong> the inverter screen must be in <strong>Passive mode</strong>. The Pi uses the BMS's charge level: normally it lets the inverter follow the house load; at the floor it only charges from spare solar; at the ceiling it only discharges. If the BMS reading is missing or the BMS reports a protection, it puts the inverter in standby. If the Pi stops altogether, the inverter keeps its last mode and its own voltage limits still apply, so keep them set as a backstop.
     </p>
+<?php if (!$piMode && (!$bmsId || !$hasCt || $otherPi)): ?>
+    <p class="help warn">Pi control isn't available for this unit: <?= !$bmsId ? 'no battery BMS is linked to it (Admin → Equipment, "Battery BMS")'
+      : (!$hasCt ? 'it has no CT, so it can only run as the second unit of a pair' : h($otherPi['name']) . ' is already under Pi control') ?>.</p>
+<?php endif; ?>
 <?php $touOn = count(array_filter($dev['tou'] ?? [], fn($s) => !empty($s['on']))); ?>
     <p><a href="tou.php?id=<?= h(rawurlencode($id)) ?>">🕒 Time-of-use schedule</a>
       <span class="help">: <?= $touOn ? h($touOn) . ' slot' . ($touOn === 1 ? '' : 's') . ' on' . ($piMode ? '' : ' (runs only under Pi control)') : 'none set' ?>. Charge from the grid at cheap times, or keep the battery for later.</span></p>
@@ -242,17 +255,10 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
       <label>Controller
         <select name="controller">
           <option value="inverter"<?= $piMode ? '' : ' selected' ?>>Inverter (screen in Auto mode)</option>
-          <option value="pi"<?= $piMode ? ' selected' : '' ?><?= $bmsDevices ? '' : ' disabled' ?>>Pi, using the BMS (screen in Passive mode)</option>
+          <option value="pi"<?= $piMode ? ' selected' : '' ?><?= $piMode || ($bmsId && $hasCt && !$otherPi) ? '' : ' disabled' ?>>Pi, using the BMS (screen in Passive mode)</option>
         </select></label>
-      <label>BMS to follow
-        <select name="bms">
-<?php foreach ($bmsDevices as $b): ?>
-          <option value="<?= h($b['id']) ?>"<?= ($pi['bms'] ?? '') === $b['id'] ? ' selected' : '' ?>><?= h($b['name']) ?></option>
-<?php endforeach; ?>
-<?php if (!$bmsDevices): ?>
-          <option value="">No BMS in the equipment list</option>
-<?php endif; ?>
-        </select></label>
+      <div class="field">Battery BMS
+        <span style="color:var(--text)"><?= $bmsName ? h($bmsName) : 'none linked' ?> · <a href="admin.php#dev-<?= h($id) ?>">change</a></span></div>
       <label>Floor: stop discharging at (%) <input name="floor_pct" type="number" min="10" max="50" value="<?= h($pi['floor_pct']) ?>" required></label>
       <label>Ceiling: stop charging at (%) <input name="ceiling_pct" type="number" min="60" max="100" value="<?= h($pi['ceiling_pct']) ?>" required></label>
       <label>Full charge to 100% every (days, 0 = never) <input name="full_every_days" type="number" min="0" max="30" value="<?= h($pi['full_every_days']) ?>" required></label>

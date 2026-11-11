@@ -144,11 +144,13 @@ const kwShort = w => Math.abs(w) >= 1000 ? (Math.abs(w) / 1000).toFixed(1) + ' k
 
 function glance(s) {
   const devs = s.devices.filter(d => !d.retired);
-  const online = d => d && d.state === 'online';
+  const online = d => !!d && d.state === 'online';
   const data = d => (d && d.latest && d.latest.data) || {};
   const inverters = devs.filter(d => d.type === 'inverter');
-  const me = devs.find(d => d.driver === 'me3000');
-  const bms = devs.find(d => d.driver === 'jbd');
+  const mes = devs.filter(d => d.driver === 'me3000');
+  const byId = Object.fromEntries(devs.map(d => [d.id, d]));
+  // The unit whose CT is on the grid cable gives the grid and solar figures (both CTs sit there if two have one).
+  const ctUnit = mes.find(m => m.has_ct !== false && online(m)) || null;
   const t = s.totals;
   const night = inverters.length && inverters.every(d => d.state === 'night');
   const solarW = night ? 0 : inverters.some(online) ? t.power_w : null;
@@ -163,27 +165,57 @@ function glance(s) {
   out.push(card('solar', '☀ Solar', solarW, `<div class="sub">Today ${fmt(t.energy_today_kwh, 2)} kWh${
     pct !== null ? ` · ${pct}% of ${t.rated_w / 1000} kW` : ''}</div>`));
 
-  if (me) {
-    const m = data(me), up = online(me);
-    out.push(card('house', '🏠 House', up ? m.load_w : null,
-      `<div class="sub">Today ${fmt(m.load_today, 2)} kWh</div>`));
+  if (mes.length) {
+    // One unit: its own house figure. Two: the CT unit's figure counts only its own battery output, so add the
+    // others' output (and their net battery energy for today).
+    let houseW = null, houseToday = null;
+    if (ctUnit) {
+      const c = data(ctUnit), others = mes.filter(m => m !== ctUnit);
+      houseW = c.load_w + others.reduce((a, m) => a + (online(m) ? (data(m).inverter_w || 0) : 0), 0);
+      houseToday = c.load_today === undefined ? null : c.load_today +
+        others.reduce((a, m) => a + (data(m).discharge_today || 0) - (data(m).charge_today || 0), 0);
+    }
+    out.push(card('house', '🏠 House', houseW, `<div class="sub">Today ${fmt(houseToday, 2)} kWh</div>`));
   }
 
-  const src = online(bms) ? bms : online(me) ? me : null;
-  if (bms || me) {
-    const b = data(src), soc = src ? b.soc : null, bw = src ? b.batt_power_w : null;
-    const est = src && src !== bms;   // the inverter's own estimate: can be far out without the BMS
-    const flow = bw === null || bw === undefined ? '—' : Math.abs(bw) < 30 ? 'Idle'
-      : bw > 0 ? `Charging ${kwShort(bw)}` : `Supplying ${kwShort(bw)}`;
-    const stored = src === bms && b.remaining_ah && b.batt_v ? ` · ${(b.remaining_ah * b.batt_v / 1000).toFixed(1)} kWh stored` : '';
-    const bar = soc === null || soc === undefined ? '' :
+  // Batteries: each ME3000SP with its linked BMS, plus any BMS not linked to one.
+  const allBms = devs.filter(d => d.driver === 'jbd');
+  const bmsOf = m => 'bms' in m ? m.bms : (mes.length === 1 && allBms.length === 1 ? allBms[0].id : null);   // older API
+  const linked = new Set(mes.map(bmsOf).filter(Boolean));
+  const packs = mes.map(m => ({ name: m.name, me: m, bms: byId[bmsOf(m)] || null }))
+    .concat(allBms.filter(d => !linked.has(d.id)).map(b => ({ name: b.name, me: null, bms: b })));
+  if (packs.length) {
+    const read = p => {
+      const src = online(p.bms) ? p.bms : online(p.me) ? p.me : null, b = data(src);
+      return { soc: src ? b.soc : null, w: src ? b.batt_power_w : null, est: !!src && src !== p.bms,
+               kwh: src && src === p.bms && b.remaining_ah && b.batt_v ? b.remaining_ah * b.batt_v / 1000 : null,
+               full: src && src === p.bms && b.full_ah && b.batt_v ? b.full_ah * 51.2 / 1000 : null };
+    };
+    const flow = w => w === null || w === undefined ? '—' : Math.abs(w) < 30 ? 'Idle'
+      : w > 0 ? `Charging ${kwShort(w)}` : `Supplying ${kwShort(w)}`;
+    const bar = soc => soc === null || soc === undefined ? '' :
       `<div class="socbar"><span class="${soc <= 20 ? 'low' : ''}" style="width:${Math.max(0, Math.min(100, soc))}%"></span></div>`;
-    out.push(card('battery', '🔋 Battery', soc === null || soc === undefined ? ['—', ''] : [String(soc), est ? '% est' : '%'],
-      `${bar}<div class="sub">${flow}${stored}</div>`));
+    const r = packs.map(read);
+    if (packs.length === 1) {
+      const x = r[0];
+      out.push(card('battery', '🔋 Battery', x.soc === null || x.soc === undefined ? ['—', ''] : [String(x.soc), x.est ? '% est' : '%'],
+        `${bar(x.soc)}<div class="sub">${flow(x.w)}${x.kwh !== null ? ` · ${x.kwh.toFixed(1)} kWh stored` : ''}</div>`));
+    } else {
+      // Combined: weighted by capacity when every pack has a BMS reading, else a plain average.
+      const known = r.filter(x => x.soc !== null && x.soc !== undefined);
+      const weighted = known.length === r.length && r.every(x => x.full);
+      const soc = !known.length ? null : Math.round(weighted
+        ? r.reduce((a, x) => a + x.kwh, 0) / r.reduce((a, x) => a + x.full, 0) * 100
+        : known.reduce((a, x) => a + x.soc, 0) / known.length);
+      const stored = r.every(x => x.kwh !== null) ? ` · ${r.reduce((a, x) => a + x.kwh, 0).toFixed(1)} kWh stored` : '';
+      const lines = packs.map((p, i) => `<div class="sub">${esc(p.name)}: ${r[i].soc ?? '—'}${r[i].est ? '% est' : '%'} · ${flow(r[i].w)}</div>`).join('');
+      out.push(card('battery', `🔋 Batteries (${packs.length})`, soc === null ? ['—', ''] : [String(soc), weighted ? '%' : '% avg'],
+        `${bar(soc)}${lines}<div class="sub">${stored.replace(' · ', '')}</div>`));
+    }
   }
 
-  if (me) {
-    const m = data(me), g = online(me) ? m.grid_w : null;   // + export / - import
+  if (mes.length) {
+    const m = data(ctUnit), g = ctUnit ? m.grid_w : null;   // + export / - import
     const today = m.bought_today !== undefined ? `Today ${fmt(m.bought_today, 1)} in · ${fmt(m.sold_today, 1)} out kWh` : '';
     if (g === null || g === undefined) out.push(card('grid', '⚡ Grid', null, `<div class="sub">${today}</div>`));
     else if (Math.abs(g) < 30) out.push(card('grid', '⚡ Grid', ['0', 'W'], `<div class="sub">Not using the grid · ${today}</div>`));

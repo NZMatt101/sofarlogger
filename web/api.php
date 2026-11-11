@@ -54,7 +54,15 @@ function devices_with_latest($db, $site, $id = null) {
     $first = $db->prepare('SELECT MIN(ts) FROM readings WHERE device = :d');
     // The battery's history is saved every few minutes, but its newest values are kept from every poll.
     $live = $db->prepare('SELECT ts, live FROM device_snapshot WHERE device = :d');
+    $cfg = load_config();
+    $devCfg = array_column($cfg['devices'] ?? [], null, 'id');
     foreach ($devices as &$d) {
+        // Battery inverters: which BMS is their battery (null = none) and whether their CT is fitted.
+        if ($d['driver'] === 'me3000') {
+            $c = $devCfg[$d['id']] ?? [];
+            $d['bms'] = $c ? linked_bms_id($cfg, $c) : null;
+            $d['has_ct'] = (bool)($c['has_ct'] ?? true);
+        }
         $d['fields'] = json_decode($d['fields'], true);
         $d['retired'] = (bool)$d['retired'];
         $latest->bindValue(':d', $d['id']);

@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solar Overview</title>
 <link rel="stylesheet" href="style.css?v=3">
+<style>
+  /* At a glance: the same four figures as the Pi monitor screen */
+  .kpi .k { font-weight: 600; }
+  .kpi.solar .k { color: #d69e2e; } .kpi.house .k { color: #3b7dd8; } .kpi.battery .k { color: #1f9d55; }
+  .kpi.grid .k { color: var(--muted); }
+  .kpi .v.import { color: #c0392b; } .kpi .v.export { color: #1f9d55; }
+  .kpi .v.stale { color: var(--muted); }
+  .kpi .sub.import { color: #c0392b; } .kpi .sub.export { color: #1f9d55; }
+  .kpi .socbar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 4px 0 3px; max-width: 160px; }
+  .kpi .socbar span { display: block; height: 100%; background: #1f9d55; }
+  .kpi .socbar span.low { background: #c0392b; }
+</style>
 </head>
 <body>
 <noscript><div style="margin:8px 16px;padding:10px 14px;border:1px solid #c0392b;border-radius:8px;color:#c0392b">JavaScript is turned off in this browser, so live data and charts cannot load. Turn JavaScript on for this site (e.g. Samsung Internet: Settings, Sites and downloads, or disable content blockers for this site).</div></noscript>
@@ -125,6 +137,65 @@ function tile(d) {
   </a>`;
 }
 
+// "At a glance": solar, house, battery and grid, worked out the same way as the Pi monitor (extras/pi-monitor).
+const kw = w => w === null || w === undefined ? ['—', '']
+  : Math.abs(w) >= 1000 ? [(Math.abs(w) / 1000).toFixed(2), 'kW'] : [String(Math.round(Math.abs(w))), 'W'];
+const kwShort = w => Math.abs(w) >= 1000 ? (Math.abs(w) / 1000).toFixed(1) + ' kW' : Math.round(Math.abs(w)) + ' W';
+
+function glance(s) {
+  const devs = s.devices.filter(d => !d.retired);
+  const online = d => d && d.state === 'online';
+  const data = d => (d && d.latest && d.latest.data) || {};
+  const inverters = devs.filter(d => d.type === 'inverter');
+  const me = devs.find(d => d.driver === 'me3000');
+  const bms = devs.find(d => d.driver === 'jbd');
+  const t = s.totals;
+  const night = inverters.length && inverters.every(d => d.state === 'night');
+  const solarW = night ? 0 : inverters.some(online) ? t.power_w : null;
+  const card = (cls, label, w, sub, vcls = '') => {
+    const [n, u] = Array.isArray(w) ? w : kw(w);
+    return `<div class="kpi ${cls}"><div class="k">${label}</div>
+      <div class="v ${n === '—' ? 'stale' : vcls}">${n} <small>${u}</small></div>${sub || ''}</div>`;
+  };
+  const out = [];
+
+  const pct = t.rated_w && solarW !== null ? Math.round(solarW / t.rated_w * 100) : null;
+  out.push(card('solar', '☀ Solar', solarW, `<div class="sub">Today ${fmt(t.energy_today_kwh, 2)} kWh${
+    pct !== null ? ` · ${pct}% of ${t.rated_w / 1000} kW` : ''}</div>`));
+
+  if (me) {
+    const m = data(me), up = online(me);
+    out.push(card('house', '🏠 House', up ? m.load_w : null,
+      `<div class="sub">Today ${fmt(m.load_today, 2)} kWh</div>`));
+  }
+
+  const src = online(bms) ? bms : online(me) ? me : null;
+  if (bms || me) {
+    const b = data(src), soc = src ? b.soc : null, bw = src ? b.batt_power_w : null;
+    const est = src && src !== bms;   // the inverter's own estimate: can be far out without the BMS
+    const flow = bw === null || bw === undefined ? '—' : Math.abs(bw) < 30 ? 'Idle'
+      : bw > 0 ? `Charging ${kwShort(bw)}` : `Supplying ${kwShort(bw)}`;
+    const stored = src === bms && b.remaining_ah && b.batt_v ? ` · ${(b.remaining_ah * b.batt_v / 1000).toFixed(1)} kWh stored` : '';
+    const bar = soc === null || soc === undefined ? '' :
+      `<div class="socbar"><span class="${soc <= 20 ? 'low' : ''}" style="width:${Math.max(0, Math.min(100, soc))}%"></span></div>`;
+    out.push(card('battery', '🔋 Battery', soc === null || soc === undefined ? ['—', ''] : [String(soc), est ? '% est' : '%'],
+      `${bar}<div class="sub">${flow}${stored}</div>`));
+  }
+
+  if (me) {
+    const m = data(me), g = online(me) ? m.grid_w : null;   // + export / - import
+    const today = m.bought_today !== undefined ? `Today ${fmt(m.bought_today, 1)} in · ${fmt(m.sold_today, 1)} out kWh` : '';
+    if (g === null || g === undefined) out.push(card('grid', '⚡ Grid', null, `<div class="sub">${today}</div>`));
+    else if (Math.abs(g) < 30) out.push(card('grid', '⚡ Grid', ['0', 'W'], `<div class="sub">Not using the grid · ${today}</div>`));
+    else {
+      const exp = g > 0;
+      out.push(card('grid', '⚡ Grid', g, `<div class="sub ${exp ? 'export' : 'import'}">${exp ? 'Exporting' : 'Importing'}</div>
+        <div class="sub">${today}</div>`, exp ? 'export' : 'import'));
+    }
+  }
+  return out.join('');
+}
+
 async function loadSite() {
   try {
     const s = await getJSON('api.php?action=site');
@@ -132,22 +203,16 @@ async function loadSite() {
     names = Object.fromEntries(s.devices.map(d => [d.id, d.name]));
     document.title = s.site.name;
     document.getElementById('siteName').textContent = '☀ ' + s.site.name;
+    document.getElementById('kpis').innerHTML = glance(s);
     const t = s.totals;
-    const pct = t.rated_w ? Math.round(t.power_w / t.rated_w * 100) : null;
-    document.getElementById('kpis').innerHTML = `
-      <div class="kpi"><div class="k">Power now</div><div class="v">${Math.round(t.power_w)} <small>W</small></div>
-        <div class="sub">${pct !== null ? pct + '% of ' + (t.rated_w / 1000) + ' kW installed' : ''}</div></div>
-      <div class="kpi"><div class="k">Today</div><div class="v">${fmt(t.energy_today_kwh, 2)} <small>kWh</small></div></div>
-      <div class="kpi"><div class="k">Lifetime</div><div class="v">${fmt(t.energy_total_kwh / 1000, 2)} <small>MWh</small></div></div>
-      <div class="kpi"><div class="k">Equipment online</div><div class="v">${t.online} <small>of ${t.count} active</small></div>
-        <div class="sub">${s.site.daylight ? 'Daylight' : 'Night — inverters sleep'}</div></div>`;
     const active = s.devices.filter(d => !d.retired), retired = s.devices.filter(d => d.retired);
     document.getElementById('tiles').innerHTML = active.length ? active.map(tile).join('')
       : '<div class="card empty">No active equipment configured.</div>';
     document.getElementById('retiredSection').hidden = !retired.length;
     document.getElementById('retiredTiles').innerHTML = retired.map(retiredTile).join('');
-    if (s.site.sunrise) document.getElementById('sunInfo').textContent =
-      `Sunrise ${timeStr(s.site.sunrise)} · Sunset ${timeStr(s.site.sunset)}`;
+    document.getElementById('sunInfo').textContent = [`${t.online} of ${t.count} online`,
+      s.site.daylight ? 'Daylight' : 'Night: inverters sleep',
+      s.site.sunrise ? `Sunrise ${timeStr(s.site.sunrise)} · Sunset ${timeStr(s.site.sunset)}` : ''].filter(Boolean).join(' · ');
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-NZ');
   } catch (e) {
     if (e.network) return;   // the connection bar shows it; keep the last figures

@@ -55,6 +55,8 @@ readings or the admin login.
 - Bookmark `http://PI-ADDRESS/` on your devices.
 - Admin → Backup: take a full backup now and then, kept off the Pi, or turn on nightly Dropbox backups.
 
+Show the owner the [user guide](user-guide.md): it explains every screen.
+
 ## Optional: public Going Green figures
 
 `deploy/optional/setup-funnel.sh` publishes **only** the Going Green figures (`api.php?action=green`) at a

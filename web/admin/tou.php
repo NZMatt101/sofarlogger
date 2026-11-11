@@ -13,30 +13,10 @@ if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES); }
 function flash($type, $msg) { $_SESSION['flash'][] = [$type, $msg]; }
-function hhmm_minutes($t) {
-    return preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', (string)$t, $m) ? (int)$m[1] * 60 + (int)$m[2] : null;
-}
 function blank_slot() {
     return ['on' => false, 'name' => '', 'days' => [0, 1, 2, 3, 4, 5, 6], 'start' => '', 'end' => '',
             'action' => 'charge', 'watts' => 2000, 'target_pct' => 90];
 }
-// Same rule as poller.py tou_active(): first switched-on slot covering the time wins.
-function active_slot($slots, $ts) {
-    $now = (int)date('G', $ts) * 60 + (int)date('i', $ts);
-    $day = (int)date('N', $ts) - 1;
-    $prev = ($day + 6) % 7;
-    foreach (array_slice($slots, 0, TOU_MAX_SLOTS) as $i => $s) {
-        if (empty($s['on'])) continue;
-        $a = hhmm_minutes($s['start'] ?? ''); $b = hhmm_minutes($s['end'] ?? '');
-        if ($a === null || $b === null || $a === $b) continue;
-        $days = $s['days'] ?? [];
-        $hit = $a < $b ? in_array($day, $days) && $now >= $a && $now < $b
-                       : (in_array($day, $days) && $now >= $a) || (in_array($prev, $days) && $now < $b);
-        if ($hit) return $i + 1;
-    }
-    return null;
-}
-
 $id = $_GET['id'] ?? '';
 $cfg = load_config();
 $index = null;
@@ -53,6 +33,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('err', 'Form expired, please try again.');
     } else {
         try {
+          if (($_POST['action'] ?? '') === 'reserve') {
+            $pct = filter_var($_POST['reserve_pct'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 50]]);
+            if ($pct === false) throw new InvalidArgumentException('Reserve must be 0 to 50%.');
+            $floor = (int)($dev['pi_control']['floor_pct'] ?? 20);
+            $ceil = (int)($dev['pi_control']['ceiling_pct'] ?? 95);
+            if ($floor + $pct > $ceil - 20)
+                throw new InvalidArgumentException("Floor $floor% + reserve $pct% must stay at least 20% below the $ceil% ceiling.");
+            $cfg['devices'][$index]['tou_reserve'] = ['pct' => $pct];
+            save_config($cfg);
+            flash('ok', $pct ? "Reserve saved: the battery keeps $pct% above the $floor% floor, except in Use reserve slots."
+                             : 'Reserve switched off.');
+          } else {
             $in = $_POST['slot'] ?? [];
             $new = [];
             for ($n = 0; $n < TOU_MAX_SLOTS; $n++) {
@@ -65,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'days' => array_values(array_filter(array_map('intval', (array)($r['days'] ?? [])), fn($d) => $d >= 0 && $d <= 6)),
                     'start' => trim((string)($r['start'] ?? '')),
                     'end' => trim((string)($r['end'] ?? '')),
-                    'action' => in_array($r['action'] ?? '', ['charge', 'hold'], true) ? $r['action'] : 'charge',
+                    'action' => in_array($r['action'] ?? '', ['charge', 'hold', 'reserve'], true) ? $r['action'] : 'charge',
                     'watts' => filter_var($r['watts'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 100, 'max_range' => MAX_WATTS]]),
                     'target_pct' => filter_var($r['target_pct'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 20, 'max_range' => 100]]),
                 ];
@@ -90,6 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $count = count(array_filter($new, fn($s) => $s['on']));
             flash('ok', "Schedule saved: $count slot" . ($count === 1 ? '' : 's') . ' switched on. The poller applies it within a minute.'
                 . ($piMode ? '' : ' It only runs once the battery is under Pi control.'));
+          }
         } catch (Exception $e) {
             flash('err', $e->getMessage());
         }
@@ -114,7 +107,8 @@ try {
 } catch (Exception $e) {
 }
 $now = time();
-$active = active_slot($slots, $now);
+$active = tou_active_slot($slots, $now);
+$fl = pi_floor_now($dev, $now);
 $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
 ?>
 <!doctype html>
@@ -143,6 +137,8 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
   .days label { display: grid; justify-items: center; font-size: 11px; color: var(--muted); gap: 1px; }
   .presets { display: flex; gap: 4px; margin-top: 3px; }
   .presets button { font-size: 11px; padding: 1px 6px; }
+  .grid-inline { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; }
+  .grid-inline label { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -166,6 +162,7 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
 <?php else: ?>
     <dl class="info">
       <dt>Active slot</dt><dd><?= $active ? 'Slot ' . h($active) . ($slots[$active - 1]['name'] ? ' (' . h($slots[$active - 1]['name']) . ')' : '') : 'None: normal Pi control' ?></dd>
+      <dt>Floor now</dt><dd><?= h($fl['now']) ?>%<?= $fl['reserve'] ? ($fl['using'] ? " (using the {$fl['reserve']}% reserve)" : " ({$fl['floor']}% + {$fl['reserve']}% reserve)") : '' ?></dd>
       <dt>Pi control is doing</dt><dd><?= h($piState['reason'] ?? '—') ?></dd>
 <?php if (!empty($piState['problem'])): ?>
       <dt>Problem</dt><dd class="warn"><?= h($piState['problem']) ?></dd>
@@ -174,12 +171,28 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
 <?php endif; ?>
   </section>
 
+  <section class="card" id="reserve">
+    <div class="section-head"><h2>Reserve</h2></div>
+    <p class="help">Keeps part of the battery for a set time of day, such as the morning before solar picks up. Outside your
+      <strong>Use reserve</strong> slots, the battery stops discharging at the floor <em>plus</em> the reserve; inside them it can
+      use the reserve too, down to the floor (<?= h($fl['floor']) ?>%, set on the battery page). It never goes below the floor.
+      If the reserve wasn't refilled, a Use reserve slot uses whatever is above the floor. To make sure it's full, add a
+      cheap-rate Charge from grid slot before it with <em>charge to</em> set to the floor plus the reserve.</p>
+    <form class="grid-inline" method="post" action="<?= h($self) ?>#reserve">
+      <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="reserve">
+      <label>Reserve above the floor (%) <input type="number" name="reserve_pct" min="0" max="50" value="<?= h($fl['reserve']) ?>" style="width:80px"></label>
+      <button class="primary">Save reserve</button>
+      <span class="help"><?= $fl['reserve'] ? 'Held level: ' . h($fl['floor'] + $fl['reserve']) . '% · used in Use reserve slots' : 'No reserve (0%)' ?></span>
+    </form>
+  </section>
+
   <section class="card">
     <div class="section-head"><h2>Slots</h2></div>
     <p class="help">
       <strong>Charge from grid:</strong> charges the battery at the set power, from the grid if there isn't enough solar, until the BMS reaches
       <em>charge to</em>. It then holds the battery (no discharging) until the slot ends, and tops up again if it falls 3% below.<br>
       <strong>Keep battery:</strong> no discharging during the slot, so the charge is saved for later; spare solar can still charge it.<br>
+      <strong>Use reserve:</strong> releases the reserve (set above) during the slot, so the battery can cover the house down to the floor.<br>
       Outside the slots, normal Pi control applies (floor and ceiling on the battery page). A slot can run past midnight (for example 23:00 to 07:00);
       its days are the days it starts on. If slots overlap, the lower number wins.
     </p>
@@ -192,7 +205,7 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
         <thead><tr><th>#</th><th>On</th><th>Name</th><th>Days</th><th>Start</th><th>End</th><th>Action</th><th>Power (W)</th><th>Charge to (%)</th></tr></thead>
         <tbody>
 <?php foreach ($slots as $n => $s): $p = "slot[$n]"; ?>
-          <tr class="<?= $active === $n + 1 ? 'now ' : '' ?><?= ($s['action'] ?? 'charge') === 'hold' ? 'hold' : '' ?>">
+          <tr class="<?= $active === $n + 1 ? 'now ' : '' ?><?= ($s['action'] ?? 'charge') !== 'charge' ? 'hold' : '' ?>">
             <td><?= $n + 1 ?></td>
             <td><input type="checkbox" name="<?= $p ?>[on]" value="1"<?= !empty($s['on']) ? ' checked' : '' ?> aria-label="Slot <?= $n + 1 ?> on"></td>
             <td><input type="text" name="<?= $p ?>[name]" maxlength="30" value="<?= h($s['name'] ?? '') ?>" placeholder="e.g. Night rate"></td>
@@ -213,6 +226,7 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
             <td><select name="<?= $p ?>[action]">
                 <option value="charge"<?= ($s['action'] ?? '') === 'charge' ? ' selected' : '' ?>>Charge from grid</option>
                 <option value="hold"<?= ($s['action'] ?? '') === 'hold' ? ' selected' : '' ?>>Keep battery</option>
+                <option value="reserve"<?= ($s['action'] ?? '') === 'reserve' ? ' selected' : '' ?>>Use reserve</option>
               </select></td>
             <td class="charge-only"><input type="number" name="<?= $p ?>[watts]" min="100" max="<?= MAX_WATTS ?>" step="50" value="<?= h($s['watts'] ?? 2000) ?>"></td>
             <td class="charge-only"><input type="number" name="<?= $p ?>[target_pct]" min="20" max="100" value="<?= h($s['target_pct'] ?? 90) ?>"></td>
@@ -230,7 +244,7 @@ document.querySelectorAll('.presets button').forEach(b => b.addEventListener('cl
   b.closest('td').querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = want.includes(c.value); });
 }));
 document.querySelectorAll('table.tou select').forEach(s => s.addEventListener('change', () => {
-  s.closest('tr').classList.toggle('hold', s.value === 'hold');
+  s.closest('tr').classList.toggle('hold', s.value !== 'charge');
 }));
 </script>
 </body>

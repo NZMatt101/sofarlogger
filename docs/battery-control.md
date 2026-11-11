@@ -65,6 +65,19 @@ midnight; its days are the days it starts on), and one of two actions:
 - Slot starts and ends are recorded in the battery page's control events.
 - Times are the Pi's local time, shown at the top of the page.
 
+## Reserve
+
+Also on the Time-of-use page, kept separate from the slots: a **reserve**, a percentage held above the Pi-control
+floor for a set time of day, such as the morning before solar picks up.
+
+- Outside **Use reserve** slots, the battery stops discharging at the floor plus the reserve (for example 30% + 10%
+  = 40%).
+- Inside a Use reserve slot (for example 05:30 to 08:30), it can use the reserve too, down to the floor. It never
+  goes below the floor.
+- If the reserve wasn't refilled, a Use reserve slot uses whatever is above the floor. To make sure it's full, add
+  a cheap-rate Charge from grid slot before it with *charge to* set to the floor plus the reserve.
+- The battery page and the Time-of-use page show the floor in force now.
+
 ## Two ME3000SP units
 
 You can add a second ME3000SP in Admin → Equipment: give it its own USB adapter, or put it on the same RS485 bus

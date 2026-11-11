@@ -50,6 +50,36 @@ function linked_bms_id($cfg, $dev) {
     return count($mes) === 1 && count($bmsIds) === 1 ? $bmsIds[0] : null;
 }
 
+// Time-of-use helpers, same rules as poller.py tou_active / tou_reserve_pct.
+function hhmm_minutes($t) {
+    return preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/', (string)$t, $m) ? (int)$m[1] * 60 + (int)$m[2] : null;
+}
+// Number (from 1) of the first switched-on slot covering time $ts, or null. Slots may run past midnight.
+function tou_active_slot($slots, $ts) {
+    $now = (int)date('G', $ts) * 60 + (int)date('i', $ts);
+    $day = (int)date('N', $ts) - 1;   // Monday = 0, like Python's tm_wday
+    $prev = ($day + 6) % 7;
+    foreach (array_slice($slots ?? [], 0, 10) as $i => $s) {
+        if (empty($s['on']) || !in_array($s['action'] ?? '', ['charge', 'hold', 'reserve'], true)) continue;
+        $a = hhmm_minutes($s['start'] ?? ''); $b = hhmm_minutes($s['end'] ?? '');
+        if ($a === null || $b === null || $a === $b) continue;
+        $days = $s['days'] ?? [];
+        $hit = $a < $b ? in_array($day, $days) && $now >= $a && $now < $b
+                       : (in_array($day, $days) && $now >= $a) || (in_array($prev, $days) && $now < $b);
+        if ($hit) return $i + 1;
+    }
+    return null;
+}
+function tou_reserve_pct($dev) { return max(0, min(50, (int)($dev['tou_reserve']['pct'] ?? 0))); }
+// Pi control's floor right now: the floor, plus the reserve except inside a "Use reserve" slot.
+function pi_floor_now($dev, $ts) {
+    $floor = (int)($dev['pi_control']['floor_pct'] ?? 20);
+    $reserve = tou_reserve_pct($dev);
+    $n = tou_active_slot($dev['tou'] ?? [], $ts);
+    $using = $n && ($dev['tou'][$n - 1]['action'] ?? '') === 'reserve';
+    return ['now' => $floor + ($using ? 0 : $reserve), 'floor' => $floor, 'reserve' => $reserve, 'using' => $using];
+}
+
 // Atomic write: the poller reloads the file when its mtime changes.
 function save_config($cfg) {
     $json = json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

@@ -50,6 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'full_every_days' => $int('full_every_days', 0, 30, 'Full charge interval'),
                         'full_spread_mv' => $int('full_spread_mv', 10, 200, 'Cell spread')];
                 if ($new['floor_pct'] > $new['ceiling_pct'] - 20) throw new InvalidArgumentException('Keep the floor at least 20% below the ceiling.');
+                $res = tou_reserve_pct($dev);
+                if ($res && $new['floor_pct'] + $res > $new['ceiling_pct'] - 20)
+                    throw new InvalidArgumentException("With the {$res}% reserve (Time-of-use page), keep the floor plus reserve at least 20% below the ceiling.");
                 if ($mode === 'pi') {
                     if (!$bmsId) throw new InvalidArgumentException('Pi control needs this inverter\'s battery BMS: choose it under "Battery BMS" in Admin → Equipment.');
                     if (!$hasCt) throw new InvalidArgumentException('This unit has no CT, so it can\'t follow the house load by itself. It can only be controlled as the second unit of a pair.');
@@ -228,6 +231,8 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
           : ($piState['sent'] === 'standby' ? 'Standby' : 'Charge from the grid at ' . (int)substr($piState['sent'], 7) . ' W'))
           . ' since ' . h(date('H:i', $piState['sent_ts'])) : '—' ?></dd>
       <dt>Why</dt><dd><?= h($piState['reason'] ?? '—') ?></dd>
+<?php $fl = pi_floor_now($dev, time()); ?>
+      <dt>Floor now</dt><dd><?= h($fl['now']) ?>%<?= $fl['reserve'] ? ($fl['using'] ? " (using the {$fl['reserve']}% reserve)" : " ({$fl['floor']}% + {$fl['reserve']}% reserve, see Time-of-use)") : '' ?></dd>
       <dt>Charging up to</dt><dd><?= $piState['target_pct'] ? h($piState['target_pct']) . '%' . ($piState['target_pct'] == 100 ? ' (full charge, to recalibrate the BMS and balance the cells)' : '') : '—' ?></dd>
       <dt>Last full charge</dt><dd><?= $piState['last_full_ts'] ? h(date('j M H:i', $piState['last_full_ts'])) : 'not seen yet' ?></dd>
       <dt>Last decision</dt><dd><?= $piState['ts'] ? h(date('H:i:s', $piState['ts'])) . (time() - $piState['ts'] > 120 ? ' <span class="warn">(the poller has stopped deciding)</span>' : '') : '—' ?></dd>

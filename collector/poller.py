@@ -732,6 +732,7 @@ def pi_decide(opts, bms, inv, hold, last_full_ts, now):
         return "standby", hold, None, f"BMS protection active: {bms.get('faults')}" if faults \
             else "BMS has switched off both charging and discharging"
     soc, floor = bms["soc"], opts["floor_pct"]
+    note = opts.get("floor_note", "")   # e.g. " incl. 10% reserve", added by pi_tick
     cmin, cmax = bms.get("cell_min_v") or 0, bms.get("cell_max_v") or 0
     full_due = (opts["full_every_days"] and (last_full_ts is None or now - last_full_ts >= opts["full_every_days"] * 86400)) \
         or (bms.get("cell_spread_mv") or 0) >= opts["full_spread_mv"]
@@ -749,8 +750,8 @@ def pi_decide(opts, bms, inv, hold, last_full_ts, now):
     net = (inv.get("gen_w") or 0) - (inv.get("load_w") or 0)   # + spare solar / - house needs more
     if hold == "low":
         if net > PI_DEADBAND_W:
-            return "auto", hold, target, f"battery at {soc}% (floor {floor}%): charging from {net} W of spare solar"
-        return "standby", hold, target, f"battery at {soc}% (floor {floor}%): holding, no spare solar"
+            return "auto", hold, target, f"battery at {soc}% (floor {floor}%{note}): charging from {net} W of spare solar"
+        return "standby", hold, target, f"battery at {soc}% (floor {floor}%{note}): holding, no spare solar"
     if hold == "high":
         if net < -PI_DEADBAND_W:
             return "auto", hold, target, f"battery at {soc}% (limit {target}%): supplying the house"
@@ -760,7 +761,9 @@ def pi_decide(opts, bms, inv, hold, last_full_ts, now):
 
 # Time-of-use (TOU) slots: up to 10 per ME3000SP in config "tou", used only under Pi control. Each slot:
 # {"on": true, "name": "Night rate", "days": [0..6] (Mon = 0), "start": "HH:MM", "end": "HH:MM",
-#  "action": "charge" | "hold", "watts": 100..3000, "target_pct": 20..100}. A slot may run past midnight
+#  "action": "charge" | "hold" | "reserve", "watts": 100..3000, "target_pct": 20..100}.
+# Reserve: config "tou_reserve": {"pct": N} holds N% above the Pi-control floor, except inside "reserve" slots,
+# where the battery may use it (down to the floor, never below). A slot may run past midnight
 # (start later than end); its days are the days it starts on. Overlapping slots: the lowest number wins.
 TOU_MAX_SLOTS = 10
 TOU_RESUME_MARGIN_PCT = 3       # after reaching the target, charge again only once this far below it
@@ -777,7 +780,7 @@ def tou_active(slots, lt):
     """(slot number from 1, slot) for the first switched-on slot covering local time lt, else (None, None)."""
     now_m, day, prev = lt.tm_hour * 60 + lt.tm_min, lt.tm_wday, (lt.tm_wday - 1) % 7
     for num, s in enumerate((slots or [])[:TOU_MAX_SLOTS], 1):
-        if not s.get("on") or s.get("action") not in ("charge", "hold"):
+        if not s.get("on") or s.get("action") not in ("charge", "hold", "reserve"):
             continue
         try:
             a, b = tou_minutes(s["start"]), tou_minutes(s["end"])
@@ -793,6 +796,14 @@ def tou_active(slots, lt):
         if hit:
             return num, s
     return None, None
+
+
+def tou_reserve_pct(dev):
+    """The reserve held above the Pi-control floor outside "reserve" slots (0 = none)."""
+    try:
+        return max(0, min(50, int((dev.get("tou_reserve") or {}).get("pct", 0))))
+    except (TypeError, ValueError):
+        return 0
 
 
 def tou_decide(slot, num, bms, inv, done, max_charge_v):
@@ -1147,9 +1158,13 @@ class Poller:
         bms = self.pi_bms(dev)
         if bms and bms.get("soc", 0) >= 100 and now - bms["ts"] <= PI_BMS_MAX_AGE:
             st["last_full"] = now
-        want, hold, target, reason = pi_decide(pi_settings(dev), bms, inv, st["hold"], st["last_full"], now)
         num, slot = tou_active(dev.get("tou"), time.localtime(now))
-        if hold != st["hold"] and not (slot and target is not None):   # a TOU slot logs its own events
+        opts = pi_settings(dev)
+        reserve = tou_reserve_pct(dev)
+        if reserve and not (slot and slot["action"] == "reserve"):
+            opts = {**opts, "floor_pct": opts["floor_pct"] + reserve, "floor_note": f" incl. {reserve}% reserve"}
+        want, hold, target, reason = pi_decide(opts, bms, inv, st["hold"], st["last_full"], now)
+        if hold != st["hold"] and not (slot and slot["action"] != "reserve" and target is not None):   # charge/keep slots log their own
             self.control_event(dev["id"], now, f"Pi control: {reason}")
         st["hold"], st["reason"] = hold, reason
         if target is not None:
@@ -1160,14 +1175,15 @@ class Poller:
         action, watts = want, None
         if num != st.get("tou_num"):
             if num:
-                what = (f"charge from the grid at {slot.get('watts')} W to {slot.get('target_pct')}%"
-                        if slot["action"] == "charge" else "keep the battery (no discharging)")
+                what = {"charge": f"charge from the grid at {slot.get('watts')} W to {slot.get('target_pct')}%",
+                        "hold": "keep the battery (no discharging)",
+                        "reserve": f"use the {reserve}% reserve (down to the {pi_settings(dev)['floor_pct']}% floor)"}[slot["action"]]
                 self.control_event(dev["id"], now, f"TOU {num}{' (' + slot['name'] + ')' if slot.get('name') else ''} "
                                                    f"started: {what} until {slot['end']}")
             else:
                 self.control_event(dev["id"], now, f"TOU {st['tou_num']} ended: back to normal Pi control")
             st["tou_num"], st["tou_done"] = num, False
-        if slot and not safety:
+        if slot and slot["action"] != "reserve" and not safety:
             action, watts, st["tou_done"], reason = tou_decide(
                 slot, num, bms, inv, st.get("tou_done", False), float(dev.get("max_charge_v", DEFAULT_MAX_CHARGE_V)))
             st["reason"] = reason

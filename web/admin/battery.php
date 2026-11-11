@@ -187,7 +187,7 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
     <div class="crumbs"><a href="../device.html?id=<?= h(rawurlencode($id)) ?>">← <?= h($dev['name']) ?></a></div>
     <h1>🔋 Battery control</h1>
   </div>
-  <nav class="top"><a href="tou.php?id=<?= h(rawurlencode($id)) ?>">Time-of-use</a> <a href="admin.php#dev-<?= h($id) ?>">Equipment settings</a></nav>
+  <nav class="top"><a href="tou.php?id=<?= h(rawurlencode($id)) ?>">Time-of-use</a> <a href="admin.php#dev-<?= h($id) ?>">Equipment settings</a> <a href="../guide.html#5-the-battery-control-page">📘 Guide</a></nav>
 </header>
 <main>
 <?php foreach ($flashes as [$type, $msg]): ?>

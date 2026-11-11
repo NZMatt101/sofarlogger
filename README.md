@@ -58,7 +58,7 @@ equipment. Full steps: [docs/SETUP.md](docs/SETUP.md).
 **Update:** `cd sofarlogger && git pull && sudo ./install.sh`. Your settings, readings and login are kept.
 
 **Using it day to day:** see the [user guide](docs/user-guide.md), with pictures of every screen and step-by-step
-"how to" instructions.
+"how to" instructions. It is also built into the logger as a formatted manual (**📘 Guide** at the top of every page).
 
 Or download a fixed version from the [Releases](../../releases) page and run `sudo ./install.sh` from the
 unpacked folder.

@@ -6,6 +6,8 @@ any technical knowledge. Each section has a picture of the screen and step-by-st
 
 The pictures come from a real system called "Home Solar". Your names and numbers will be different.
 
+This guide is also built into your logger: press **📘 Guide** at the top of any page.
+
 ## Contents
 
 1. [Opening the dashboard](#1-opening-the-dashboard)
@@ -40,7 +42,7 @@ username is `admin`. Keep the password private.
 
 ## 2. The front page (overview)
 
-![The overview: solar, house, battery and grid at a glance, and the equipment list](images/overview-top.png)
+![The overview: solar, house, battery and grid at a glance, and the equipment list](../web/guide/img/overview-top.png)
 
 The top box shows your whole system at a glance:
 
@@ -55,7 +57,7 @@ The top box shows your whole system at a glance:
 
 Further down the page are charts:
 
-![The day chart](images/overview-chart.png)
+![The day chart](../web/guide/img/overview-chart.png)
 
 - **Site power:** solar power through the day. Use **◀ ▶** to look at other days, or **Today** to come back.
 - **Daily energy:** one bar per day. Choose **7 days, 30 days, 90 days or 1 year**.
@@ -64,13 +66,13 @@ Further down the page are charts:
 
 **On a phone** the same boxes stack two by two:
 
-<img src="images/overview-phone.png" alt="The overview on a phone" width="300">
+<img src="../web/guide/img/overview-phone.png" alt="The overview on a phone" width="300">
 
 ---
 
 ## 3. "Can't reach the logger"
 
-![The connection bar](images/connection-bar.png)
+![The connection bar](../web/guide/img/connection-bar.png)
 
 If your phone loses its connection to the logger, for example when it wakes up, changes Wi-Fi, or you leave
 home, a yellow bar appears at the top. The page **keeps showing the last figures** (the bar tells you what
@@ -90,7 +92,7 @@ If the bar doesn't go away:
 
 Tap a card on the front page to open that device's own page. This is the battery inverter's:
 
-![Live figures for the battery inverter](images/device-live.png)
+![Live figures for the battery inverter](../web/guide/img/device-live.png)
 
 The **Live** box shows everything the device reports. The most useful figures:
 
@@ -114,7 +116,7 @@ for the admin password.
 
 ### "Now": what the battery is doing
 
-![Now](images/battery-now.png)
+![Now](../web/guide/img/battery-now.png)
 
 The same live figures, plus **two battery percentages**:
 
@@ -124,7 +126,7 @@ The same live figures, plus **two battery percentages**:
 
 ### "Who controls the battery"
 
-![Who controls the battery](images/battery-controller.png)
+![Who controls the battery](../web/guide/img/battery-controller.png)
 
 Your battery can be run in one of two ways:
 
@@ -172,7 +174,7 @@ When the Pi is in control, the box tells you:
 
 ### Manual control: do something right now
 
-![Manual control](images/battery-manual.png)
+![Manual control](../web/guide/img/battery-manual.png)
 
 | Button | What it does |
 |---|---|
@@ -199,13 +201,13 @@ While a manual run is on, the Pi's automatic control waits and then takes over a
 Open it from the battery control page: **🕒 Time-of-use schedule**. It only works while the **Pi** controls the
 battery.
 
-![Time-of-use: Now](images/tou-now.png)
+![Time-of-use: Now](../web/guide/img/tou-now.png)
 
 The **Now** box shows the logger's clock, which slot (if any) is running, and the floor in force.
 
 ### Slots
 
-![Time-of-use slots](images/tou-slots.png)
+![Time-of-use slots](../web/guide/img/tou-slots.png)
 
 You can have up to **10 slots**. Each one has days, a start and end time, and an action:
 
@@ -244,7 +246,7 @@ Say your power is cheap from 11 pm to 7 am:
 
 ### Reserve: keep some battery for the morning
 
-![Reserve](images/tou-reserve.png)
+![Reserve](../web/guide/img/tou-reserve.png)
 
 The reserve is a slice of battery that's **kept back** until a time you choose, for example for the morning
 before the sun comes up.
@@ -276,7 +278,7 @@ whatever there is above the floor.
 
 **Admin → Equipment** lists every device. You usually set these up once.
 
-![Battery inverter settings](images/admin-me3000.png)
+![Battery inverter settings](../web/guide/img/admin-me3000.png)
 
 On the **battery inverter** (ME3000SP):
 
@@ -284,7 +286,7 @@ On the **battery inverter** (ME3000SP):
 - **CT fitted:** tick this if the inverter's current clamp is on the main grid cable (it normally is).
 - **Battery control:** shows who's in control, with a link to change it.
 
-![Battery BMS settings](images/admin-bms.png)
+![Battery BMS settings](../web/guide/img/admin-bms.png)
 
 On the **battery BMS**: **Battery for** shows which inverter it's linked to.
 
@@ -297,9 +299,9 @@ Press **Save** after any change. The logger picks it up within a minute.
 If you have the optional little screen, it shows the same figures without opening a browser. It updates every
 15 seconds.
 
-![Main screen](images/monitor-main.png)
+![Main screen](../web/guide/img/monitor-main.png)
 
-![Battery screen](images/monitor-battery.png)
+![Battery screen](../web/guide/img/monitor-battery.png)
 
 The three buttons on its side:
 

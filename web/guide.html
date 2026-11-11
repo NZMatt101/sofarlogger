@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SofarLogger user guide</title>
+<link rel="stylesheet" href="style.css?v=3">
+<style>
+  /* Manual layout: contents down the side on wide screens, one column on phones; prints cleanly. */
+  .manual { display: grid; grid-template-columns: 230px minmax(0, 780px); gap: 32px; justify-content: center; }
+  .toc { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow: auto;
+          font-size: 14px; padding: 14px 16px; }
+  .toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin: 5px 0; }
+  .toc a { color: var(--text); text-decoration: none; }
+  .toc a:hover, .toc a.here { color: var(--link, #2b6cb0); }
+  .toc a.here { font-weight: 600; }
+  article { line-height: 1.6; font-size: 16px; padding: 8px 28px 28px; }
+  article h2 { font-size: 24px; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  article h2:first-of-type { border-top: 0; }
+  article h3 { font-size: 19px; margin: 28px 0 8px; }
+  article h4 { font-size: 16px; margin: 22px 0 6px; padding: 6px 10px; border-left: 4px solid #e8a317;
+                background: color-mix(in srgb, #e8a317 10%, transparent); border-radius: 0 6px 6px 0; }
+  article p { margin: 10px 0; }
+  article ol, article ul { padding-left: 24px; }
+  article li { margin: 6px 0; }
+  article ol > li::marker { font-weight: 700; color: #e8a317; }
+  .lead { font-size: 18px; color: var(--muted); margin-top: 0; }
+  figure { margin: 18px 0; }
+  figure img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, .08); display: block; }
+  figure.narrow img { max-width: 300px; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .table-wrap { overflow-x: auto; margin: 14px 0; }
+  article table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  article th, article td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  article th { background: var(--hover, #f0f3f7); }
+  article code { background: var(--hover, #f0f3f7); padding: 1px 5px; border-radius: 4px; font-size: 90%; }
+  .note { margin: 16px 0; padding: 12px 16px; border-radius: 8px; border-left: 5px solid #3b7dd8;
+           background: color-mix(in srgb, #3b7dd8 9%, transparent); }
+  .note.warn { border-left-color: #c0392b; background: color-mix(in srgb, #c0392b 9%, transparent); }
+  .contents-head, ol.contents { display: none; }   /* the side panel replaces it on wide screens */
+  .top-link { display: inline-block; margin-top: 24px; font-size: 14px; }
+  @media (max-width: 980px) {
+    .manual { grid-template-columns: minmax(0, 1fr); }
+    .toc { display: none; }
+    .contents-head, ol.contents { display: block; }
+    article { padding: 4px 18px 20px; font-size: 15.5px; }
+  }
+  @media print {
+    header nav, .toc, .top-link, #connBar { display: none !important; }
+    .manual { display: block; }
+    .contents-head, ol.contents { display: block; }
+    article { box-shadow: none; border: 0; padding: 0; }
+    article h2 { break-before: page; border-top: 0; }
+    article h2.contents-head { break-before: auto; }
+    figure, table, .note { break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body id="top">
+<header>
+  <h1>📘 SofarLogger user guide</h1>
+  <nav class="top"><a href="index.html">Overview</a> · <a href="savings.html">Savings</a> · <a href="green.html">🌿 Going Green</a> · <a href="admin/admin.php">Admin</a> · <a href="#" onclick="print(); return false">Print</a></nav>
+</header>
+<main class="manual">
+  <nav class="card toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#1-opening-the-dashboard">Opening the dashboard</a></li>
+      <li><a href="#2-the-front-page-overview">The front page (overview)</a></li>
+      <li><a href="#3-cant-reach-the-logger">"Can't reach the logger"</a></li>
+      <li><a href="#4-looking-at-one-piece-of-equipment">Looking at one piece of equipment</a></li>
+      <li><a href="#5-the-battery-control-page">The battery control page</a></li>
+      <li><a href="#6-time-of-use-cheap-rate-charging-and-the-reserve">Time-of-use: cheap-rate charging and the reserve</a></li>
+      <li><a href="#7-equipment-settings">Equipment settings</a></li>
+      <li><a href="#8-the-little-screen">The little screen</a></li>
+      <li><a href="#9-common-questions">Common questions</a></li>
+      <li><a href="#10-words-used-in-this-guide">Words used in this guide</a></li>
+    </ol>
+  </nav>
+  <article class="card">
+<p class="lead">This guide shows you how to read your solar and battery dashboard and how to do the everyday jobs: check what your system is doing, charge the battery when power is cheap, and keep some battery for later. You don't need any technical knowledge. Each section has a picture of the screen and step-by-step instructions.</p>
+<p>The pictures come from a real system called "Home Solar". Your names and numbers will be different.</p>
+<p>This guide is also built into your logger: press <strong>📘 Guide</strong> at the top of any page.</p>
+<h2 id="contents" class="contents-head">Contents</h2>
+<ol class="contents"><li><a href="#1-opening-the-dashboard">Opening the dashboard</a></li><li><a href="#2-the-front-page-overview">The front page (overview)</a></li><li><a href="#3-cant-reach-the-logger">"Can't reach the logger"</a></li><li><a href="#4-looking-at-one-piece-of-equipment">Looking at one piece of equipment</a></li><li><a href="#5-the-battery-control-page">The battery control page</a></li><li><a href="#6-time-of-use-cheap-rate-charging-and-the-reserve">Time-of-use: cheap-rate charging and the reserve</a></li><li><a href="#7-equipment-settings">Equipment settings</a></li><li><a href="#8-the-little-screen">The little screen</a></li><li><a href="#9-common-questions">Common questions</a></li><li><a href="#10-words-used-in-this-guide">Words used in this guide</a></li></ol>
+<h2 id="1-opening-the-dashboard">1. Opening the dashboard</h2>
+<p>The logger is a small computer (a Raspberry Pi) on your home network. You look at it with the web browser on your phone, tablet or computer.</p>
+<ol><li>Make sure your phone or computer is on your <strong>home Wi-Fi</strong>.</li><li>Open the web browser and type the logger's address, for example <code>http://192.168.1.20</code>. The person who set up your system will give you the address.</li><li><strong>Save it:</strong> bookmark the page, or on a phone choose <strong>Add to Home screen</strong> so it opens like an app.</li></ol>
+<p>Pages that change settings (Admin, Battery control, Time-of-use) ask for a <strong>username and password</strong>. The username is <code>admin</code>. Keep the password private.</p>
+<aside class="note tip"><strong>Tip:</strong> the pages update themselves every 30 seconds. You don't need to keep pressing refresh.</aside>
+<h2 id="2-the-front-page-overview">2. The front page (overview)</h2>
+<figure><a href="guide/img/overview-top.png" target="_blank"><img src="guide/img/overview-top.png" alt="The overview: solar, house, battery and grid at a glance, and the equipment list" loading="lazy"></a><figcaption>The overview: solar, house, battery and grid at a glance, and the equipment list</figcaption></figure>
+<p>The top box shows your whole system at a glance:</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>What it shows</th></tr></thead><tbody><tr><td><strong>① Solar</strong></td><td>How much power your solar panels are making <strong>right now</strong>. Underneath: how much they've made <strong>today</strong> (in kWh) and how hard they're working compared with the system's size.</td></tr><tr><td><strong>② House</strong></td><td>How much power your home is using right now, and how much it has used today.</td></tr><tr><td><strong>③ Battery</strong></td><td>How full the battery is (%). The bar turns <strong>red at 20% or below</strong>. Underneath: whether it's <strong>charging</strong>, <strong>supplying</strong> the house or <strong>idle</strong>, and how much energy is stored. If you see <strong>"% est"</strong>, the figure is the inverter's own guess because the battery's BMS isn't answering: treat it with care.</td></tr><tr><td><strong>④ Grid</strong></td><td>Your connection to the power company. <strong>Red "Importing"</strong> means you're buying power. <strong>Green "Exporting"</strong> means you're selling spare solar. "Not using the grid" means the house is running on solar and battery.</td></tr><tr><td><strong>⑤ Equipment</strong></td><td>One card per device: solar inverter, battery inverter, battery. The badge shows <strong>Online</strong> (working), <strong>Offline · night</strong> (solar inverters sleep at night, which is normal), or a problem such as <strong>No data</strong>. <strong>Tap a card</strong> to see its details.</td></tr><tr><td><strong>⑥ Links</strong></td><td><strong>Savings</strong> (money saved), <strong>Going Green</strong> (carbon saved) and <strong>Admin</strong> (settings). "Updated" shows the time of the last refresh.</td></tr></tbody></table></div>
+<p>Further down the page are charts:</p>
+<figure><a href="guide/img/overview-chart.png" target="_blank"><img src="guide/img/overview-chart.png" alt="The day chart" loading="lazy"></a><figcaption>The day chart</figcaption></figure>
+<ul><li><strong>Site power:</strong> solar power through the day. Use <strong>◀ ▶</strong> to look at other days, or <strong>Today</strong> to come back.</li><li><strong>Daily energy:</strong> one bar per day. Choose <strong>7 days, 30 days, 90 days or 1 year</strong>.</li><li><strong>Monthly energy:</strong> every month since the system started.</li><li><strong>Export CSV:</strong> download the readings for a spreadsheet.</li></ul>
+<p><strong>On a phone</strong> the same boxes stack two by two:</p>
+<figure class="narrow"><img src="guide/img/overview-phone.png" alt="The overview on a phone" width="300"><figcaption>The overview on a phone</figcaption></figure>
+<h2 id="3-cant-reach-the-logger">3. "Can't reach the logger"</h2>
+<figure><a href="guide/img/connection-bar.png" target="_blank"><img src="guide/img/connection-bar.png" alt="The connection bar" loading="lazy"></a><figcaption>The connection bar</figcaption></figure>
+<p>If your phone loses its connection to the logger, for example when it wakes up, changes Wi-Fi, or you leave home, a yellow bar appears at the top. The page <strong>keeps showing the last figures</strong> (the bar tells you what time they're from) and <strong>tries again by itself</strong>. When the connection is back, the bar turns green, says <strong>✓ Reconnected</strong> and disappears.</p>
+<p>If the bar doesn't go away:</p>
+<ol><li>Check your phone is on your <strong>home Wi-Fi</strong> (not mobile data).</li><li>Check the logger has power: its small lights should be on.</li><li>Wait a couple of minutes: after a power cut the logger takes a minute or two to start.</li><li>Still nothing? Turn the logger off and on again at the wall, wait 2 minutes, and reload the page.</li></ol>
+<h2 id="4-looking-at-one-piece-of-equipment">4. Looking at one piece of equipment</h2>
+<p>Tap a card on the front page to open that device's own page. This is the battery inverter's:</p>
+<figure><a href="guide/img/device-live.png" target="_blank"><img src="guide/img/device-live.png" alt="Live figures for the battery inverter" loading="lazy"></a><figcaption>Live figures for the battery inverter</figcaption></figure>
+<p>The <strong>Live</strong> box shows everything the device reports. The most useful figures:</p>
+<div class="table-wrap"><table><thead><tr><th>Figure</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>State</strong></td><td>What the inverter is doing: <em>Charging</em>, <em>Discharging</em> (supplying the house), <em>Standby</em> (resting)</td></tr><tr><td><strong>Battery power</strong></td><td><strong>+</strong> means charging, <strong>−</strong> means discharging</td></tr><tr><td><strong>Grid power</strong></td><td><strong>+</strong> means exporting (selling), <strong>−</strong> means importing (buying)</td></tr><tr><td><strong>House load</strong></td><td>What the house is using now</td></tr><tr><td><strong>Faults</strong></td><td>Should say <em>None</em></td></tr></tbody></table></div>
+<p>Below the Live box are the same charts as the front page, for this device only, and a list of <strong>Events</strong> (faults and changes). The <strong>Control and settings →</strong> link opens the battery control page (next section).</p>
+<h2 id="5-the-battery-control-page">5. The battery control page</h2>
+<p>Open it from the battery inverter's page (<strong>Control and settings →</strong>) or from <strong>Admin → Equipment</strong>. It asks for the admin password.</p>
+<h3 id="now-what-the-battery-is-doing">"Now": what the battery is doing</h3>
+<figure><a href="guide/img/battery-now.png" target="_blank"><img src="guide/img/battery-now.png" alt="Now" loading="lazy"></a><figcaption>Now</figcaption></figure>
+<p>The same live figures, plus <strong>two battery percentages</strong>:</p>
+<ul><li><strong>Battery charge (BMS):</strong> from the battery's own management system. <strong>This is the true figure.</strong></li><li><strong>Battery charge (inverter estimate):</strong> the inverter's guess from the battery voltage. It can be well out: ignore it if the two disagree.</li></ul>
+<h3 id="who-controls-the-battery">"Who controls the battery"</h3>
+<figure><a href="guide/img/battery-controller.png" target="_blank"><img src="guide/img/battery-controller.png" alt="Who controls the battery" loading="lazy"></a><figcaption>Who controls the battery</figcaption></figure>
+<p>Your battery can be run in one of two ways:</p>
+<div class="table-wrap"><table><thead><tr><th>Controller</th><th>What happens</th></tr></thead><tbody><tr><td><strong>Inverter</strong></td><td>The inverter runs the battery by itself, using its own (less accurate) battery estimate.</td></tr><tr><td><strong>Pi</strong></td><td>The logger runs the battery using the BMS's true charge level, your <strong>floor</strong> and <strong>ceiling</strong>, and your <strong>time-of-use schedule</strong>.</td></tr></tbody></table></div>
+<p>When the Pi is in control, the box tells you:</p>
+<ul><li><strong>Inverter told to:</strong> what the Pi last asked for (<em>Auto</em> = follow the house, <em>Standby</em> = rest, or <em>Charge from the grid</em>).</li><li><strong>Why:</strong> the reason in plain words, for example <em>"battery at 26% (floor 40% incl. 10% reserve): holding, no spare solar"</em>.</li><li><strong>Floor now:</strong> the lowest the battery is allowed to go at the moment.</li><li><strong>Charging up to:</strong> the highest it will charge to (100% about once a week, to keep the cells balanced).</li></ul>
+<p><strong>The settings:</strong></p>
+<div class="table-wrap"><table><thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead><tbody><tr><td><strong>Floor</strong></td><td>The battery stops supplying the house at this level, and only charges from spare solar below it</td><td>20–30%</td></tr><tr><td><strong>Ceiling</strong></td><td>The battery stops charging at this level</td><td>95%</td></tr><tr><td><strong>Full charge every … days</strong></td><td>A charge to 100% now and then, so the battery can balance its cells</td><td>7</td></tr><tr><td><strong>…or sooner when cells differ by</strong></td><td>Charge to 100% sooner if the cells drift apart</td><td>30 mV</td></tr></tbody></table></div>
+<h4 id="how-to-hand-the-battery-to-the-pi">How to: hand the battery to the Pi</h4>
+<ol><li>On the <strong>inverter's own screen</strong>, go to <strong>Settings → Work Mode Set → Set Passive Mode</strong>. (Without this, the inverter refuses the Pi's commands.)</li><li>On the battery control page, under <strong>Controller</strong>, choose <strong>Pi, using the BMS</strong>.</li><li>Check the <strong>Floor</strong> and <strong>Ceiling</strong>, then press <strong>Save</strong> and confirm.</li><li>Within a minute, <strong>Inverter told to</strong> and <strong>Why</strong> fill in. Watch it for a few minutes the first time.</li></ol>
+<h4 id="how-to-give-control-back-to-the-inverter">How to: give control back to the inverter</h4>
+<ol><li>Under <strong>Controller</strong>, choose <strong>Inverter</strong>, press <strong>Save</strong> and confirm.</li><li>On the <strong>inverter's screen</strong>, set <strong>Work Mode</strong> back to <strong>Auto</strong>. (Don't skip this: otherwise the inverter stays in Passive mode with nobody running it.)</li></ol>
+<h4 id="how-to-change-the-floor-or-ceiling">How to: change the floor or ceiling</h4>
+<ol><li>Type the new numbers in <strong>Floor</strong> and/or <strong>Ceiling</strong>.</li><li>Press <strong>Save</strong>. The Pi uses them within a minute.</li></ol>
+<h3 id="manual-control-do-something-right-now">Manual control: do something right now</h3>
+<figure><a href="guide/img/battery-manual.png" target="_blank"><img src="guide/img/battery-manual.png" alt="Manual control" loading="lazy"></a><figcaption>Manual control</figcaption></figure>
+<div class="table-wrap"><table><thead><tr><th>Button</th><th>What it does</th></tr></thead><tbody><tr><td><strong>Auto (normal operation)</strong></td><td>Back to normal. Also cancels any of the options below.</td></tr><tr><td><strong>Standby</strong></td><td>The battery stops charging and discharging until you press Auto.</td></tr><tr><td><strong>Charge the battery</strong></td><td>Charges at the power you choose for the time you choose. It uses spare solar first and <strong>then the grid</strong>, so it can add to your power bill.</td></tr><tr><td><strong>Discharge the battery</strong></td><td>Supplies power from the battery at the power you choose for the time you choose.</td></tr></tbody></table></div>
+<h4 id="how-to-charge-the-battery-now-for-half-an-hour">How to: charge the battery now for half an hour</h4>
+<ol><li>Under <strong>Charge the battery</strong>, set <strong>Power (W)</strong>, for example <code>1000</code>.</li><li>Set <strong>Time limit (minutes)</strong> to <code>30</code>.</li><li>Press <strong>Start charging</strong> and confirm.</li><li>It stops by itself after 30 minutes, at the safety voltage, or on any fault, and goes back to normal.</li></ol>
+<p>While a manual run is on, the Pi's automatic control waits and then takes over again.</p>
+<aside class="note warn"><strong>Safety:</strong> start with a low power and a short time, and keep an eye on it the first time.</aside>
+<h2 id="6-time-of-use-cheap-rate-charging-and-the-reserve">6. Time-of-use: cheap-rate charging and the reserve</h2>
+<p>Open it from the battery control page: <strong>🕒 Time-of-use schedule</strong>. It only works while the <strong>Pi</strong> controls the battery.</p>
+<figure><a href="guide/img/tou-now.png" target="_blank"><img src="guide/img/tou-now.png" alt="Time-of-use: Now" loading="lazy"></a><figcaption>Time-of-use: Now</figcaption></figure>
+<p>The <strong>Now</strong> box shows the logger's clock, which slot (if any) is running, and the floor in force.</p>
+<h3 id="slots">Slots</h3>
+<figure><a href="guide/img/tou-slots.png" target="_blank"><img src="guide/img/tou-slots.png" alt="Time-of-use slots" loading="lazy"></a><figcaption>Time-of-use slots</figcaption></figure>
+<p>You can have up to <strong>10 slots</strong>. Each one has days, a start and end time, and an action:</p>
+<div class="table-wrap"><table><thead><tr><th>Action</th><th>What happens during the slot</th></tr></thead><tbody><tr><td><strong>Charge from grid</strong></td><td>Charges the battery at the <strong>Power</strong> you set until it reaches <strong>Charge to</strong>, using the grid if there isn't enough sun. Then it rests until the slot ends.</td></tr><tr><td><strong>Keep battery</strong></td><td>The battery doesn't supply the house, so its charge is saved for later. Spare solar can still charge it.</td></tr><tr><td><strong>Use reserve</strong></td><td>Lets the house use the <strong>reserve</strong> (see below).</td></tr></tbody></table></div>
+<p>Good to know:</p>
+<ul><li>A slot can <strong>run past midnight</strong>, for example 23:00 to 07:00. Tick the days it <strong>starts</strong> on.</li><li>If two slots overlap, the <strong>lower number wins</strong>.</li><li>Outside the slots, the battery runs normally between your floor and ceiling.</li></ul>
+<h4 id="how-to-charge-the-battery-on-the-cheap-night-rate">How to: charge the battery on the cheap night rate</h4>
+<p>Say your power is cheap from 11 pm to 7 am:</p>
+<ol><li>In an empty row, tick <strong>On</strong>.</li><li><strong>Name:</strong> <code>Night rate</code>.</li><li>Press <strong>Every day</strong> (or tick just the days you want).</li><li><strong>Start</strong> <code>23:00</code>, <strong>End</strong> <code>07:00</code>.</li><li><strong>Action:</strong> <em>Charge from grid</em>.</li><li><strong>Power (W):</strong> for example <code>2000</code>. Remember this adds to everything else in the house on your main fuse.</li><li><strong>Charge to (%):</strong> for example <code>60</code>, enough for tomorrow's evening, leaving room for solar.</li><li>Press <strong>Save schedule</strong>.</li></ol>
+<h4 id="how-to-save-the-battery-for-the-expensive-evening">How to: save the battery for the expensive evening</h4>
+<ol><li>In an empty row, tick <strong>On</strong>, and name it <code>Before peak</code>.</li><li>Choose the days, and times such as <strong>14:00</strong> to <strong>17:00</strong>.</li><li><strong>Action:</strong> <em>Keep battery</em>.</li><li>Press <strong>Save schedule</strong>. During those hours the battery doesn't supply the house; it fills from the sun instead, ready for the evening.</li></ol>
+<h3 id="reserve-keep-some-battery-for-the-morning">Reserve: keep some battery for the morning</h3>
+<figure><a href="guide/img/tou-reserve.png" target="_blank"><img src="guide/img/tou-reserve.png" alt="Reserve" loading="lazy"></a><figcaption>Reserve</figcaption></figure>
+<p>The reserve is a slice of battery that's <strong>kept back</strong> until a time you choose, for example for the morning before the sun comes up.</p>
+<p><strong>Example:</strong> floor 30%, reserve 10%, and a <em>Use reserve</em> slot from 05:30 to 08:30.</p>
+<div class="table-wrap"><table><thead><tr><th>Time</th><th>What the battery does</th></tr></thead><tbody><tr><td>Evening</td><td>Supplies the house down to <strong>40%</strong> (30% + 10%), then rests</td></tr><tr><td>Overnight</td><td>Rests at 40%. The house runs on the grid</td></tr><tr><td>05:30–08:30</td><td>The reserve is released: the battery covers the morning down to <strong>30%</strong></td></tr><tr><td>After 08:30</td><td>Rests again, and refills from the sun during the day</td></tr></tbody></table></div>
+<p>It <strong>never</strong> goes below the floor (30% here). If the reserve wasn't refilled, the morning slot just uses whatever there is above the floor.</p>
+<h4 id="how-to-set-up-a-morning-reserve">How to: set up a morning reserve</h4>
+<ol><li>In the <strong>Reserve</strong> box, type <code>10</code> in <strong>Reserve above the floor (%)</strong> and press <strong>Save reserve</strong>.</li><li>In the <strong>Slots</strong> table, use an empty row: tick <strong>On</strong>, name it <code>Morning peak</code>, press <strong>Every day</strong>.</li><li><strong>Start</strong> <code>05:30</code>, <strong>End</strong> <code>08:30</code>, <strong>Action:</strong> <em>Use reserve</em>.</li><li>Press <strong>Save schedule</strong>.</li><li><strong>Optional:</strong> to be sure the reserve is full each morning, add a <em>Charge from grid</em> slot on the cheap night rate with <strong>Charge to</strong> set to the floor plus the reserve (40% in this example).</li></ol>
+<h2 id="7-equipment-settings">7. Equipment settings</h2>
+<p><strong>Admin → Equipment</strong> lists every device. You usually set these up once.</p>
+<figure><a href="guide/img/admin-me3000.png" target="_blank"><img src="guide/img/admin-me3000.png" alt="Battery inverter settings" loading="lazy"></a><figcaption>Battery inverter settings</figcaption></figure>
+<p>On the <strong>battery inverter</strong> (ME3000SP):</p>
+<ul><li><strong>Battery BMS:</strong> which battery belongs to this inverter. Each battery belongs to one inverter.</li><li><strong>CT fitted:</strong> tick this if the inverter's current clamp is on the main grid cable (it normally is).</li><li><strong>Battery control:</strong> shows who's in control, with a link to change it.</li></ul>
+<figure><a href="guide/img/admin-bms.png" target="_blank"><img src="guide/img/admin-bms.png" alt="Battery BMS settings" loading="lazy"></a><figcaption>Battery BMS settings</figcaption></figure>
+<p>On the <strong>battery BMS</strong>: <strong>Battery for</strong> shows which inverter it's linked to.</p>
+<p>Press <strong>Save</strong> after any change. The logger picks it up within a minute.</p>
+<h2 id="8-the-little-screen">8. The little screen</h2>
+<p>If you have the optional little screen, it shows the same figures without opening a browser. It updates every 15 seconds.</p>
+<figure><a href="guide/img/monitor-main.png" target="_blank"><img src="guide/img/monitor-main.png" alt="Main screen" loading="lazy"></a><figcaption>Main screen</figcaption></figure>
+<figure><a href="guide/img/monitor-battery.png" target="_blank"><img src="guide/img/monitor-battery.png" alt="Battery screen" loading="lazy"></a><figcaption>Battery screen</figcaption></figure>
+<p>The three buttons on its side:</p>
+<div class="table-wrap"><table><thead><tr><th>Button</th><th>What it does</th></tr></thead><tbody><tr><td><strong>Top (K1)</strong></td><td>Previous page</td></tr><tr><td><strong>Middle (K2)</strong></td><td>Turns the picture upside down (if you've mounted it the other way up)</td></tr><tr><td><strong>Bottom (K3)</strong></td><td>Next page</td></tr></tbody></table></div>
+<p>The battery page shows every cell of the battery. The <strong>lowest</strong> cell has a <strong>blue</strong> outline and the <strong>highest</strong> an <strong>amber</strong> one. A <strong>red</strong> cell is outside its safe range and worth asking about.</p>
+<h2 id="9-common-questions">9. Common questions</h2>
+<p><strong>The house is using power but the battery isn't helping.</strong> Look at <strong>Why</strong> on the battery control page. Usually the battery has reached the <strong>floor</strong> (or the floor plus the <strong>reserve</strong>) and is resting on purpose. It will start again when the sun refills it, or when a <em>Use reserve</em> slot starts.</p>
+<p><strong>The sun is shining but the battery isn't charging.</strong> Either it has reached the <strong>ceiling</strong>, or the panels are only just covering the house (it needs at least about 50 W spare). It will start when there's more spare solar.</p>
+<p><strong>I'm exporting power but the battery isn't full.</strong> Check for a slot that's running, and look at <strong>Why</strong>. If the battery is at the ceiling it won't charge more until the next full charge (shown under <strong>Charging up to</strong>).</p>
+<p><strong>The two battery percentages are different.</strong> Trust <strong>Battery charge (BMS)</strong>. The inverter's estimate can be a long way out.</p>
+<p><strong>The battery page says "the inverter isn't in Passive mode".</strong> The Pi is in control but the inverter's screen isn't in Passive mode. Set <strong>Work Mode → Passive Mode</strong> on the inverter, or switch the controller back to <strong>Inverter</strong>.</p>
+<p><strong>It says "the poller has stopped deciding".</strong> The logger's background program hasn't checked in for a while. Wait two minutes. If it doesn't clear, turn the logger off and on at the wall.</p>
+<p><strong>I changed a setting and nothing happened.</strong> Changes take up to a minute. Charging and discharging also wait at least a minute between switches, so they don't flicker on cloudy days.</p>
+<p><strong>A card on the front page says "Offline · night".</strong> Solar inverters switch off when it's dark. That's normal.</p>
+<h2 id="10-words-used-in-this-guide">10. Words used in this guide</h2>
+<div class="table-wrap"><table><thead><tr><th>Word</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>W / kW</strong></td><td>Power <em>right now</em> (1 kW = 1,000 W). Like the speed on a car's speedometer.</td></tr><tr><td><strong>kWh</strong></td><td>Energy <em>over time</em>. Like the distance on the trip meter. Your power bill counts kWh.</td></tr><tr><td><strong>Battery %</strong></td><td>How full the battery is.</td></tr><tr><td><strong>BMS</strong></td><td>The battery's own management system. It knows the true charge level and protects the cells.</td></tr><tr><td><strong>Inverter</strong></td><td>The box that turns solar or battery power into household power.</td></tr><tr><td><strong>CT</strong></td><td>A clamp on the main power cable that lets the inverter see what you're buying or selling.</td></tr><tr><td><strong>Import / export</strong></td><td>Buying power from the grid / selling spare power to it.</td></tr><tr><td><strong>Floor</strong></td><td>The lowest the battery is allowed to go.</td></tr><tr><td><strong>Ceiling</strong></td><td>The highest the battery charges to (except the occasional full charge).</td></tr><tr><td><strong>Reserve</strong></td><td>Extra battery kept back above the floor until a <em>Use reserve</em> slot.</td></tr><tr><td><strong>Time-of-use (TOU)</strong></td><td>Power prices that change through the day. The schedule lets the battery take advantage.</td></tr><tr><td><strong>Passive mode</strong></td><td>The inverter setting that lets the logger give it instructions.</td></tr></tbody></table></div>
+<aside class="note warn"><strong>Safety reminder:</strong> the logger sends commands to your battery inverter. The battery's own BMS and the inverter's limits always stay in charge of safety. If something looks wrong (a fault, a red cell, the battery much hotter than usual), switch the controller back to <strong>Inverter</strong>, set the inverter's Work Mode to <strong>Auto</strong>, and ask your installer.</aside>
+    <a class="top-link" href="#top">↑ Back to the top</a>
+  </article>
+</main>
+<script>
+// Highlight the section being read in the side panel.
+const links = [...document.querySelectorAll('.toc a')];
+const heads = links.map(a => document.getElementById(a.getAttribute('href').slice(1)));
+const mark = () => {
+  let cur = 0;
+  heads.forEach((h, n) => { if (h && h.getBoundingClientRect().top < 120) cur = n; });
+  links.forEach((a, n) => a.classList.toggle('here', n === cur));
+};
+addEventListener('scroll', mark, { passive: true });
+mark();
+</script>
+</body>
+</html>

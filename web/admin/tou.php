@@ -147,7 +147,7 @@ $ceiling = (float)($dev['max_charge_v'] ?? 53.5);
     <div class="crumbs"><a href="battery.php?id=<?= h(rawurlencode($id)) ?>">← Battery control</a></div>
     <h1>🕒 Time-of-use schedule</h1>
   </div>
-  <nav class="top"><a href="battery.php?id=<?= h(rawurlencode($id)) ?>#controller">Who controls the battery</a></nav>
+  <nav class="top"><a href="battery.php?id=<?= h(rawurlencode($id)) ?>#controller">Who controls the battery</a> <a href="../guide.html#6-time-of-use-cheap-rate-charging-and-the-reserve">📘 Guide</a></nav>
 </header>
 <main>
 <?php foreach ($flashes as [$type, $msg]): ?>

@@ -27,10 +27,11 @@ fi
 chown root:www-data /etc/solar-logger/admin.htpasswd && chmod 0660 /etc/solar-logger/admin.htpasswd
 
 # Web UI (replaces Apache default page)
-install -d /var/www/html/admin /var/www/html/inc
+install -d /var/www/html/admin /var/www/html/inc /var/www/html/guide/img
 install -m 0644 "$SRC"/web/*.html "$SRC"/web/*.php "$SRC"/web/*.js "$SRC"/web/*.css /var/www/html/
 install -m 0644 "$SRC"/web/admin/*.php /var/www/html/admin/
 install -m 0644 "$SRC"/web/inc/*.php /var/www/html/inc/
+install -m 0644 "$SRC"/web/guide/img/*.png /var/www/html/guide/img/
 install -m 0644 "$SRC/deploy/solar-admin.conf" /etc/apache2/conf-available/solar-admin.conf
 a2enmod -q headers
 a2enconf -q solar-admin

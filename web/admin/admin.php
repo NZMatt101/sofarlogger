@@ -514,7 +514,7 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
     <div class="crumbs"><a href="../">← <?= h($site['name'] ?? 'Overview') ?></a></div>
     <h1>⚙ Admin</h1>
   </div>
-  <nav class="top"><a href="../">Overview</a><a href="../savings.html">Savings</a><a href="../green.html">Going Green</a><a href="#site">Site</a><a href="#green">Green settings</a><a href="#tariffs">Tariffs</a><a href="#equipment">Equipment</a><a href="#history">History</a><a href="#backup">Backup</a><a href="#admin">Admin login</a></nav>
+  <nav class="top"><a href="../">Overview</a><a href="../savings.html">Savings</a><a href="../green.html">Going Green</a><a href="../guide.html">Guide</a><a href="#site">Site</a><a href="#green">Green settings</a><a href="#tariffs">Tariffs</a><a href="#equipment">Equipment</a><a href="#history">History</a><a href="#backup">Backup</a><a href="#admin">Admin login</a></nav>
 </header>
 <main>
 <?php foreach ($flashes as [$type, $msg]): ?>

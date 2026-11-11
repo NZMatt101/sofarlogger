@@ -63,7 +63,7 @@
 </main>
 <footer class="note" id="footnote"></footer>
 
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 const num = (v, d = 0) => Number(v || 0).toLocaleString('en-NZ', { minimumFractionDigits: d, maximumFractionDigits: d });
 const co2Str = kg => kg >= 1000 ? `${num(kg / 1000, kg >= 10000 ? 1 : 2)} <small>tonnes</small>` : `${num(kg, kg < 10 ? 1 : 0)} <small>kg</small>`;
@@ -136,7 +136,8 @@ async function load() {
 }
 
 load();
-setInterval(() => load().catch(() => {}), 60000);
+window.solarRetry = () => load().catch(() => {});
+setInterval(window.solarRetry, 60000);
 </script>
 </body>
 </html>

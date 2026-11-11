@@ -87,7 +87,7 @@
 </main>
 
 <script src="chart.umd.min.js?v=3"></script>
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 const id = new URLSearchParams(location.search).get('id') || '';
 let dev, dayChart, dailyChart, monthlyChart, days = 30, lastDay, monthlyData;
@@ -136,6 +136,7 @@ async function loadDevice() {
     }
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-NZ');
   } catch (e) {
+    if (e.network) return;   // the connection bar shows it; keep the last figures
     document.getElementById('devName').textContent = 'Device not found';
     document.getElementById('updated').textContent = String(e.message || e);
   }
@@ -236,7 +237,8 @@ loadDevice().then(() => {
   } else { loadDaily(); loadMonthly(); }
   loadEvents();
 });
-setInterval(() => { if (dev && !dev.retired) { loadDevice(); if (nav.isToday()) nav.refresh(); } }, 30000);
+window.solarRetry = () => { loadDevice(); if (nav.isToday()) nav.refresh(); };
+setInterval(() => { if (dev && !dev.retired) window.solarRetry(); }, 30000);
 </script>
 </body>
 </html>

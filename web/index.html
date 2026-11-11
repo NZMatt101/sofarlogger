@@ -73,7 +73,7 @@
 </main>
 
 <script src="chart.umd.min.js?v=3"></script>
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 let names = {}, dayChart, dailyChart, monthlyChart, days = 30;
 
@@ -150,6 +150,7 @@ async function loadSite() {
       `Sunrise ${timeStr(s.site.sunrise)} · Sunset ${timeStr(s.site.sunset)}`;
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-NZ');
   } catch (e) {
+    if (e.network) return;   // the connection bar shows it; keep the last figures
     document.getElementById('updated').textContent = 'Cannot reach the Pi API';
   }
 }
@@ -180,7 +181,8 @@ rangeButtons(n => { days = n; loadDaily(); });
 initCsvForm();
 
 loadSite().then(() => { nav.start(); loadDaily(); loadMonthly(); });
-setInterval(() => { loadSite(); if (nav.isToday()) nav.refresh(); }, 30000);
+window.solarRetry = () => { loadSite(); if (nav.isToday()) nav.refresh(); };
+setInterval(window.solarRetry, 30000);
 </script>
 </body>
 </html>

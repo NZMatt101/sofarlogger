@@ -19,7 +19,10 @@
     b.textContent = 'Page error: ' + msg;
   }
   window.addEventListener('error', e => { const m = `${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno})`; report('error', m); banner(m); });
-  window.addEventListener('unhandledrejection', e => { const m = (e.reason && (e.reason.stack || e.reason.message)) || e.reason; report('rejection', m); banner(m); });
+  window.addEventListener('unhandledrejection', e => {
+    if (e.reason && e.reason.network) { e.preventDefault(); return; }   // shown by the connection bar instead
+    const m = (e.reason && (e.reason.stack || e.reason.message)) || e.reason; report('rejection', m); banner(m);
+  });
   window.solarReport = report;
   report('boot', 'common.js loaded');
 })();
@@ -42,14 +45,100 @@ const deviceColor = {};
 function assignColors(devices) { devices.forEach((d, i) => { deviceColor[d.id] = COLORS[i % COLORS.length]; }); }
 const colorFor = id => deviceColor[id] || COLORS[0];
 
+// Connection status: a small bar when the Pi can't be reached (phone asleep, Wi-Fi or VPN dropping out),
+// instead of a page error. The last figures stay on screen. Pages set window.solarRetry to their refresh
+// function so it can retry sooner than their normal interval.
+const connection = (function () {
+  const RETRY = [5, 10, 20, 30];   // seconds; then every 30 s
+  let down = false, fails = 0, lastOk = null, timer = null, hideTimer = null, bar = null, pending = false;
+  function el() {
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'connBar';
+      bar.setAttribute('role', 'status');
+      bar.style.cssText = 'position:sticky;top:0;z-index:50;margin:0;padding:8px 16px;font-size:14px;text-align:center;' +
+        'display:none;border-bottom:1px solid var(--line)';
+      (document.body || document.documentElement).prepend(bar);
+    }
+    return bar;
+  }
+  function show(text, ok) {
+    const b = el();
+    b.textContent = text;
+    b.style.background = ok ? 'color-mix(in srgb, #1f9d55 22%, var(--bg))' : 'color-mix(in srgb, #d69e2e 28%, var(--bg))';
+    b.style.color = 'var(--text)';
+    b.style.display = 'block';
+  }
+  function retry() {
+    clearTimeout(timer);
+    pending = false;
+    if (!lastOk) location.reload();   // the page never loaded: start it again from scratch
+    else if (typeof window.solarRetry === 'function') window.solarRetry();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    const s = lastOk ? RETRY[Math.min(fails - 1, RETRY.length - 1)] : 10;
+    const since = lastOk ? ` · showing figures from ${lastOk.toLocaleTimeString('en-NZ')}` : '';
+    show(`⚠ Can't reach the logger · retrying in ${s} s${since}`, false);
+    pending = true;
+    timer = setTimeout(retry, s * 1000);
+  }
+  window.addEventListener('online', () => { if (down) retry(); });
+  document.addEventListener('visibilitychange', () => { if (down && document.visibilityState === 'visible') retry(); });
+  return {
+    ok() {
+      lastOk = new Date();
+      if (!down) return;
+      down = false; fails = 0; pending = false; clearTimeout(timer);
+      show('✓ Reconnected', true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => { if (!down) el().style.display = 'none'; }, 3000);
+    },
+    lost() {
+      if (!down) window.solarReport('fetch', 'connection lost');   // once per outage, not every request
+      down = true;
+      clearTimeout(hideTimer);
+      if (pending) return;   // a page load makes several requests: count one failed attempt per retry
+      fails++;
+      schedule();
+    },
+    get down() { return down; },
+  };
+})();
+
 async function getJSON(url) {
+  let r;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);   // a hung request counts as lost
   try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    r = await fetch(url, { cache: 'no-store', signal: ctl.signal });
+  } catch (e) {   // network failure or timeout: not a page bug
+    connection.lost();
+    const err = new Error(`Can't reach the logger (${e.name === 'AbortError' ? 'timed out' : e.message || e})`);
+    err.network = true;
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+  if (r.status >= 502 && r.status <= 504) {   // Pi up but the web server briefly unavailable (e.g. restarting)
+    connection.lost();
+    const err = new Error(`The logger is busy (HTTP ${r.status})`);
+    err.network = true;
+    throw err;
+  }
+  connection.ok();
+  if (!r.ok) {
+    window.solarReport('fetch', `${url}: HTTP ${r.status}`);
+    throw new Error(`HTTP ${r.status}`);
+  }
+  try {
     return await r.json();
   } catch (e) {
-    window.solarReport('fetch', `${url}: ${e.message || e}`);
-    throw e;
+    if (e.name === 'SyntaxError') throw e;   // a bad reply is a real bug: let the page error show it
+    connection.lost();                       // the connection dropped mid-reply
+    const err = new Error(`Can't reach the logger (${e.message || e})`);
+    err.network = true;
+    throw err;
   }
 }
 

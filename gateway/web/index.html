@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSIP Gateway</title>
+<style>
+:root {
+  --bg: #f4f4f2; --surface: #fcfcfb; --border: #e2e1dc;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #75746f;
+  --grid: #e8e7e2; --axis: #b9b8b1;
+  --s1: #2a78d6; --s2: #eb6834;
+  --good: #0ca30c; --warn: #b77a00; --crit: #d03b3b;
+  --badge-bg: #eef3fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110; --surface: #1a1a19; --border: #2f2f2c;
+    --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #9a998f;
+    --grid: #2a2a28; --axis: #4a4a46;
+    --s1: #3987e5; --s2: #d95926;
+    --good: #2fbf2f; --warn: #fab219; --crit: #e66767;
+    --badge-bg: #1d2a3b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.badge { font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--badge-bg); color: var(--ink-2); }
+.conn { margin-left: auto; font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
+.dot.good { background: var(--good); } .dot.crit { background: var(--crit); } .dot.warn { background: var(--warn); }
+html, body { overflow-x: hidden; }
+main { max-width: 1040px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+main > *, .invs > *, .hero > * { min-width: 0; }
+.tablewrap { overflow-x: auto; }
+.conn { min-width: 0; }
+#conn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+dd { overflow-wrap: anywhere; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 16px; }
+.hero .label { font-size: 13px; color: var(--ink-2); }
+.hero .value { font-size: 34px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.hero .value small { font-size: 16px; font-weight: 500; color: var(--ink-2); margin-left: 3px; }
+.hero .sub { font-size: 12.5px; color: var(--ink-3); }
+.invs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.inv h2 { font-size: 15px; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+.inv .swatch { width: 10px; height: 10px; border-radius: 2px; }
+.inv .meta { font-size: 12.5px; color: var(--ink-3); margin-bottom: 12px; }
+.state { font-size: 13px; display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; margin: 4px 0 14px; }
+.bar > div { height: 100%; background: var(--s1); border-radius: 4px; transition: width .4s; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; font-size: 14px; }
+dt { color: var(--ink-2); } dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.section-title { font-size: 14px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.section-title .spacer { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; padding: 4px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--badge-bg); color: var(--ink); font-weight: 600; }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 14px; height: 2px; display: inline-block; }
+#chart { position: relative; }
+#chart svg { display: block; width: 100%; height: 240px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 9px; font-size: 12.5px; box-shadow: 0 2px 8px rgba(0,0,0,.12); white-space: nowrap; display: none; }
+.tip b { font-variant-numeric: tabular-nums; }
+.empty { color: var(--ink-3); font-size: 13.5px; padding: 30px 0; text-align: center; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+th { color: var(--ink-2); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+details summary { cursor: pointer; font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+.note { font-size: 12.5px; color: var(--ink-3); }
+@media (max-width: 520px) { .hero .value { font-size: 28px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>CSIP Gateway</h1>
+  <span class="badge" id="mode">Monitor only, no control</span>
+  <span class="conn"><span class="dot" id="conn-dot"></span><span id="conn-text">Connecting…</span></span>
+</header>
+<main>
+  <section class="card hero" aria-label="Site summary">
+    <div><div class="label">Solar output now</div><div class="value" id="site-power">–</div><div class="sub" id="site-of"></div></div>
+    <div><div class="label">Energy today</div><div class="value" id="site-today">–</div><div class="sub">from the inverters' own counters</div></div>
+    <div><div class="label">Inverters online</div><div class="value" id="site-online">–</div><div class="sub" id="site-poll"></div></div>
+  </section>
+
+  <section class="invs" id="invs"></section>
+
+  <section class="card">
+    <div class="section-title">
+      <span>Output power, 1-minute average</span>
+      <span class="legend" id="legend"></span>
+      <span class="spacer"></span>
+      <span class="seg" role="group" aria-label="Time range">
+        <button data-h="3">3 h</button><button data-h="12" aria-pressed="true">12 h</button><button data-h="24">24 h</button><button data-h="48">48 h</button>
+      </span>
+    </div>
+    <div id="chart"><div class="tip" id="tip"></div></div>
+    <details><summary>Show as table</summary><div id="chart-table"></div></details>
+  </section>
+
+  <section class="card">
+    <div class="section-title">Events</div>
+    <div id="events"></div>
+  </section>
+  <p class="note">Reads only: this gateway sends Modbus read requests and never writes to the inverters.</p>
+</main>
+
+<script>
+const SERIES_VARS = ['--s1', '--s2'];
+let status = null, hours = 12, history = null;
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmtW = w => w >= 1000 ? (w / 1000).toFixed(2) + '<small>kW</small>' : Math.round(w) + '<small>W</small>';
+const fmtWtxt = w => w >= 1000 ? (w / 1000).toFixed(2) + ' kW' : Math.round(w) + ' W';
+const hhmm = ts => new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function getJSON(url) {
+  const r = await fetch(url, {cache: 'no-store'});
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function renderStatus() {
+  const s = status.site;
+  $('site-power').innerHTML = fmtW(s.power_w);
+  $('site-of').textContent = s.rated_w ? `${Math.round(100 * s.power_w / s.rated_w)}% of ${fmtWtxt(s.rated_w)} rated` : '';
+  $('site-today').innerHTML = s.energy_today_kwh.toFixed(2) + '<small>kWh</small>';
+  $('site-online').innerHTML = `${s.online}<small>of ${s.count}</small>`;
+  $('site-poll').textContent = `read every ${status.poll_seconds} s`;
+  $('mode').textContent = status.mode === 'monitor' ? 'Monitor only, no control' : status.mode;
+
+  $('invs').innerHTML = status.inverters.map((inv, i) => {
+    const d = inv.data, col = `var(${SERIES_VARS[i % 2]})`;
+    const ok = inv.online && d;
+    const stateDot = !ok ? 'crit' : (d.faults.length || d.state_code >= 3 ? 'warn' : (d.state_code === 2 ? 'good' : ''));
+    const stateText = !ok ? `No reply${inv.last_error ? ': ' + esc(inv.last_error) : ''}${isNight() ? ' (inverter asleep at night?)' : ''}`
+                          : esc(d.state) + (d.faults.length ? ' · faults ' + esc(d.faults.join(', ')) : '');
+    const pct = ok && inv.rated_w ? Math.min(100, 100 * d.power_w / inv.rated_w) : 0;
+    const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+    return `<article class="card inv">
+      <h2><span class="swatch" style="background:${col}"></span>${esc(inv.name)}</h2>
+      <div class="meta">Modbus address ${inv.address} · ${inv.rated_w ? fmtWtxt(inv.rated_w) + ' rated' : ''} · ${inv.polls ? Math.round(100 * (inv.polls - inv.fails) / inv.polls) : 0}% of reads answered</div>
+      <div class="state"><span class="dot ${stateDot}"></span>${stateText}</div>
+      ${ok ? `
+      <div style="display:flex;justify-content:space-between;font-size:14px"><span>Output</span><b style="font-variant-numeric:tabular-nums">${fmtWtxt(d.power_w)}</b></div>
+      <div class="bar" role="img" aria-label="${Math.round(pct)}% of rated power"><div style="width:${pct}%;background:${col}"></div></div>
+      <dl>
+        ${row('String 1', `${d.pv1_v.toFixed(1)} V · ${d.pv1_a.toFixed(2)} A · ${fmtWtxt(d.pv1_w)}`)}
+        ${row('String 2', d.pv2_a > 0 || d.pv2_v > 50 ? `${d.pv2_v.toFixed(1)} V · ${d.pv2_a.toFixed(2)} A · ${fmtWtxt(d.pv2_w)}` : 'not connected')}
+        ${row('Grid', `${d.grid_v.toFixed(1)} V · ${d.grid_hz.toFixed(2)} Hz · ${d.grid_a.toFixed(2)} A`)}
+        ${row('Temperature', `${d.temp_c} °C`)}
+        ${row('Today', `${d.energy_today_kwh.toFixed(2)} kWh`)}
+        ${row('Lifetime', `${d.energy_total_kwh.toLocaleString()} kWh · ${d.hours_total.toLocaleString()} h`)}
+        ${row('Last read', `${inv.age_s} s ago`)}
+      </dl>` : `<div class="note">Last good read: ${inv.age_s != null ? Math.round(inv.age_s) + ' s ago' : 'none since start'}</div>`}
+    </article>`;
+  }).join('');
+}
+
+function isNight() { const h = new Date().getHours(); return h < 6 || h >= 20; }
+
+function setConn(ok, text) {
+  $('conn-dot').className = 'dot ' + (ok ? 'good' : 'crit');
+  $('conn-text').textContent = text;
+}
+
+async function pollStatus() {
+  try {
+    status = await getJSON('api/status');
+    renderStatus();
+    setConn(true, 'Live · updated ' + new Date(status.now * 1000).toLocaleTimeString());
+  } catch (e) {
+    setConn(false, 'Gateway not responding');
+  }
+}
+
+// ---------------------------------------------------------------- chart
+function renderChart() {
+  const box = $('chart'), tip = $('tip');
+  box.querySelectorAll('svg,.empty').forEach(n => n.remove());
+  const invs = status ? status.inverters : [];
+  const series = invs.map((inv, i) => ({name: inv.name, color: css(SERIES_VARS[i % 2]), pts: (history.series[inv.id] || []).map(r => [r[0], r[1]])}));
+  $('legend').innerHTML = series.length > 1 ? series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('') : '';
+  const all = series.flatMap(s => s.pts);
+  if (!all.length) {
+    box.insertAdjacentHTML('afterbegin', '<div class="empty">No history yet: the first point appears after a minute of readings.</div>');
+    $('chart-table').innerHTML = '';
+    return;
+  }
+  const W = box.clientWidth || 600, H = 240, L = 48, R = 12, T = 12, B = 26;
+  const x0 = history.since, x1 = Date.now() / 1000;
+  const rated = invs.reduce((a, i) => Math.max(a, i.rated_w || 0), 0);
+  const maxV = Math.max(...all.map(p => p[1]), 100);
+  const yMax = niceMax(Math.max(maxV, 0) * 1.08);
+  const X = t => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const Y = v => T + (1 - v / yMax) * (H - T - B);
+  const grid = css('--grid'), axis = css('--axis'), ink2 = css('--ink-2');
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Output power over the last ${hours} hours">`;
+  const yt = ticks(yMax);
+  yt.forEach(v => { svg += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="${grid}" stroke-width="1"/>`
+    + `<text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="${ink2}">${v >= 1000 ? (v / 1000) + ' kW' : v + ' W'}</text>`; });
+  const step = hours <= 3 ? 1800 : hours <= 12 ? 7200 : hours <= 24 ? 14400 : 21600;
+  for (let t = Math.ceil(x0 / step) * step; t <= x1; t += step)
+    svg += `<text x="${X(t)}" y="${H - 7}" text-anchor="middle" font-size="11" fill="${ink2}">${hhmm(t)}</text>`;
+  svg += `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="${axis}" stroke-width="1"/>`;
+  series.forEach(s => {
+    // break the line where minutes are missing (inverter asleep or no reply)
+    let d = '', prev = null;
+    s.pts.forEach(p => { d += (prev && p[0] - prev[0] <= 180 ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); prev = p; });
+    svg += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+  svg += `<line id="xh" y1="${T}" y2="${H - B}" stroke="${axis}" stroke-width="1" visibility="hidden"/>`;
+  series.forEach((s, i) => svg += `<circle id="xd${i}" r="4.5" fill="${s.color}" stroke="${css('--surface')}" stroke-width="2" visibility="hidden"/>`);
+  svg += `<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" id="hit"/></svg>`;
+  box.insertAdjacentHTML('afterbegin', svg);
+
+  const svgEl = box.querySelector('svg'), xh = svgEl.querySelector('#xh');
+  const nearest = (pts, t) => { let best = null; for (const p of pts) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p; return best && Math.abs(best[0] - t) <= 150 ? best : null; };
+  const move = ev => {
+    const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+    const t = x0 + (px - L) / (W - L - R) * (x1 - x0);
+    let lines = [], any = null;
+    series.forEach((s, i) => {
+      const p = nearest(s.pts, t), dot = svgEl.querySelector('#xd' + i);
+      if (p) { any = p; dot.setAttribute('cx', X(p[0])); dot.setAttribute('cy', Y(p[1])); dot.setAttribute('visibility', 'visible');
+        lines.push(`${series.length > 1 ? esc(s.name) + ': ' : ''}<b>${fmtWtxt(p[1])}</b>`); }
+      else dot.setAttribute('visibility', 'hidden');
+    });
+    if (!any) { tip.style.display = 'none'; xh.setAttribute('visibility', 'hidden'); return; }
+    xh.setAttribute('x1', X(any[0])); xh.setAttribute('x2', X(any[0])); xh.setAttribute('visibility', 'visible');
+    tip.innerHTML = `${hhmm(any[0])}<br>${lines.join('<br>')}`;
+    tip.style.display = 'block';
+    const bx = X(any[0]) * r.width / W;
+    tip.style.left = Math.min(Math.max(0, bx + 12), r.width - tip.offsetWidth) + 'px';
+    tip.style.top = '8px';
+  };
+  const leave = () => { tip.style.display = 'none'; xh.setAttribute('visibility', 'hidden'); series.forEach((s, i) => svgEl.querySelector('#xd' + i).setAttribute('visibility', 'hidden')); };
+  svgEl.addEventListener('pointermove', move);
+  svgEl.addEventListener('pointerleave', leave);
+
+  // table view: hourly averages
+  const hourly = {};
+  series.forEach((s, i) => s.pts.forEach(p => { const h = Math.floor(p[0] / 3600) * 3600; (hourly[h] ||= series.map(() => [])); hourly[h][i].push(p[1]); }));
+  const avg = a => a.length ? fmtWtxt(a.reduce((x, y) => x + y, 0) / a.length) : '–';
+  $('chart-table').innerHTML = `<table><thead><tr><th>Hour</th>${series.map(s => `<th class="num">${esc(s.name)} (avg)</th>`).join('')}</tr></thead><tbody>`
+    + Object.keys(hourly).sort((a, b) => b - a).map(h => `<tr><td>${hhmm(+h)}</td>${hourly[h].map(a => `<td class="num">${avg(a)}</td>`).join('')}</tr>`).join('')
+    + '</tbody></table>';
+}
+
+function niceMax(v) { const steps = [500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000, 10000]; return steps.find(s => s >= v) || Math.ceil(v / 1000) * 1000; }
+function ticks(max) { const n = max <= 1000 ? 250 : max <= 2000 ? 500 : 1000; const out = []; for (let v = 0; v <= max + 1; v += n) out.push(v); return out; }
+
+async function loadHistory() {
+  try { history = await getJSON('api/history?hours=' + hours); if (status) renderChart(); } catch (e) { /* keep last */ }
+}
+
+async function loadEvents() {
+  try {
+    const ev = (await getJSON('api/events')).events;
+    $('events').innerHTML = ev.length ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Inverter</th><th>Event</th><th>Detail</th></tr></thead><tbody>${
+      ev.map(e => `<tr><td>${new Date(e.ts * 1000).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}</td><td>${esc(e.inverter || 'gateway')}</td><td>${esc(e.kind)}</td><td>${esc(e.detail)}</td></tr>`).join('')
+    }</tbody></table></div>` : '<div class="note">No events yet. They are saved once a minute.</div>';
+  } catch (e) { /* keep last */ }
+}
+
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  hours = +b.dataset.h; loadHistory();
+}));
+window.addEventListener('resize', () => { if (history && status) renderChart(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (history && status) renderChart(); });
+
+(async () => {
+  await pollStatus(); await loadHistory(); loadEvents();
+  setInterval(pollStatus, 2000);
+  setInterval(loadHistory, 60000);
+  setInterval(loadEvents, 30000);
+})();
+</script>
+</body>
+</html>

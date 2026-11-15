@@ -1,0 +1,20 @@
+[Unit]
+Description=Solar logger SMS alerts (equipment not responding)
+After=network-online.target solar-poller.service
+Wants=network-online.target
+
+[Service]
+User=solarcap
+Group=www-data
+UMask=0007
+ExecStart=/usr/bin/python3 /opt/solar-logger/collector/notifier.py --notify /etc/solar-logger/notify.json --config /etc/solar-logger/config.json --db /var/lib/solar-logger/solar.db
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/solar-logger
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

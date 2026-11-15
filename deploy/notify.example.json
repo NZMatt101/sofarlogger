@@ -1,0 +1,20 @@
+{
+  "enabled": false,
+  "down_after_s": 180,
+  "solar_down_after_s": 900,
+  "remind_hours": 6,
+  "max_sms_per_day": 20,
+  "http_checks": [
+    {"name": "Gateway Pi", "url": "http://192.168.1.60/api/status", "down_after_s": 300}
+  ],
+  "heartbeat_url": null,
+  "smsglobal": {
+    "api": "rest",
+    "api_key": "",
+    "api_secret": "",
+    "user": "",
+    "password": "",
+    "from": "",
+    "to": []
+  }
+}

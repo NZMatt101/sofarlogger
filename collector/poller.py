@@ -386,6 +386,8 @@ class Me3000Driver:
             "gen_w": r(0x0215) * 10,
             "grid_v": r(0x0206) / 10,
             "grid_hz": r(0x020C) / 100,
+            "eps_v": r(0x0216) / 10,        # EPS (LOAD port) output voltage
+            "eps_w": r(0x0217) * 10,        # EPS output power; the document gives no unit, 0.01 kW like its neighbours
             "inner_temp": s(0x0238),
             "heatsink_temp": s(0x0239),
             "charge_today": r(0x0224) / 100,
@@ -660,6 +662,57 @@ class Me3000Control:
             raise PollError("unreachable", str(e))
         try:
             return Me3000Driver.transact(fd, cls.build_heartbeat(slave), 0.5)
+        finally:
+            os.close(fd)
+
+    # EPS (backup power on the LOAD port) on/off: SOFAR passive-mode protocol, function 0x41, register 0x0000,
+    # value 0x0055 enable / 0x00AA disable. Frames match the document's examples byte for byte, CRC included.
+    # The document doesn't describe the reply or offer a way to read the setting back, so the raw reply is recorded.
+    EPS_FUNCTION = 0x41
+    EPS_VALUES = {True: 0x0055, False: 0x00AA}
+
+    @classmethod
+    def build_eps(cls, slave, enable):
+        frame = struct.pack(">BBHHH", slave, cls.EPS_FUNCTION, 0x0000, 0x0001, cls.EPS_VALUES[bool(enable)])
+        return frame + struct.pack("<H", Me3000Driver.crc16(frame))
+
+    @classmethod
+    def parse_eps_reply(cls, buf, slave):
+        """Return the reply as hex if the inverter answered with a CRC-valid 0x41 frame; raise otherwise."""
+        for i in range(len(buf)):
+            e = buf[i:i + 5]
+            if (len(e) == 5 and e[0] == slave and e[1] == (cls.EPS_FUNCTION | 0x80)
+                    and struct.unpack("<H", e[-2:])[0] == Me3000Driver.crc16(e[:-2])):
+                raise PollError("bad_reply", f"Modbus exception {e[2]}")
+            for n in range(5, min(len(buf) - i, 16) + 1):
+                f = buf[i:i + n]
+                if (f[0] == slave and f[1] == cls.EPS_FUNCTION
+                        and struct.unpack("<H", f[-2:])[0] == Me3000Driver.crc16(f[:-2])):
+                    if n == 7 and f[2] == 2 and f[4] != 0:   # same status layout as the 0x42 replies
+                        raise PollError("bad_reply", cls.STATUS.get(f[4], f"status {f[4]}"))
+                    return f.hex(" ")
+        raise PollError("bad_reply", f"invalid reply: {buf[:32].hex(' ')}" if buf else "no reply from the inverter")
+
+    @classmethod
+    def send_eps(cls, dev, enable):
+        port = dev.get("port", "/dev/ttyUSB0")
+        slave = int(dev.get("slave", 1))
+        frame = cls.build_eps(slave, enable)
+        try:
+            fd = Me3000Driver.open_port(port)
+        except OSError as e:
+            raise PollError("unreachable", f"cannot open {port}: {e.strerror or e}")
+        try:
+            last = None
+            for _ in range(2):  # resending is safe: it sets the same value again
+                try:
+                    return cls.parse_eps_reply(Me3000Driver.transact(fd, frame), slave)
+                except PollError as e:
+                    last = e
+                time.sleep(0.2)
+            raise last
+        except OSError as e:
+            raise PollError("unreachable", f"{port}: {e.strerror or e}")
         finally:
             os.close(fd)
 
@@ -1013,6 +1066,18 @@ class Poller:
 
     def control_command(self, dev, action, watts, minutes, now):
         """Run one queued command. Returns (status, detail)."""
+        if action in ("eps_on", "eps_off"):
+            # A setting, not a mode: it doesn't touch manual control state or Pi control.
+            label = "EPS enable" if action == "eps_on" else "EPS disable"
+            try:
+                reply = Me3000Control.send_eps(dev, action == "eps_on")
+            except PollError as e:
+                detail = f"{label} not confirmed: {e.detail}"
+                self.control_event(dev["id"], now, detail)
+                return "failed", detail
+            detail = f"{label} accepted (inverter replied {reply})"
+            self.control_event(dev["id"], now, detail)
+            return "accepted", detail
         floor = float(dev.get("min_discharge_v", DEFAULT_MIN_DISCHARGE_V))
         ceiling = float(dev.get("max_charge_v", DEFAULT_MAX_CHARGE_V))
         try:

@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('ok', 'Limits saved. They apply to manual charge and discharge runs within a minute.');
             } else {
                 $action = $_POST['command'] ?? '';
-                if (!in_array($action, ['auto', 'standby', 'charge', 'discharge'], true)) throw new InvalidArgumentException('Unknown command.');
+                if (!in_array($action, ['auto', 'standby', 'charge', 'discharge', 'eps_on', 'eps_off'], true)) throw new InvalidArgumentException('Unknown command.');
                 $watts = $minutes = null;
                 if ($action === 'charge' || $action === 'discharge') {
                     $watts = filter_var($_POST['watts'] ?? '', FILTER_VALIDATE_INT, ['options' => ['min_range' => 100, 'max_range' => MAX_WATTS]]);
@@ -325,6 +325,31 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
     </div>
   </section>
 
+  <section class="card" id="eps">
+    <div class="section-head"><h2>Backup power (EPS)</h2>
+<?php $inEps = ($live['state'] ?? '') === 'Backup (EPS)'; ?>
+      <span class="badge <?= $inEps ? 'online' : 'no_data' ?>"><?= $inEps ? 'Supplying backup now' : 'Grid connected' ?></span></div>
+    <p class="help">In a power cut the inverter can run the circuits wired to its <strong>LOAD</strong> port from the battery, if EPS is enabled.
+      Circuits on the grid side stay off. SOFAR's protocol can switch EPS on or off, but has no way to read the setting back,
+      so check <em>System Information → EPS Mode</em> on the inverter's screen after sending.</p>
+    <dl class="info">
+      <dt>EPS output voltage</dt><dd><?= $val('eps_v', 'V') ?></dd>
+      <dt>EPS output power</dt><dd><?= $val('eps_w', 'W') ?></dd>
+<?php
+$lastEps = null;
+foreach ($commands ?? [] as $c) if (in_array($c['action'], ['eps_on', 'eps_off'], true)) { $lastEps = $c; break; }
+?>
+      <dt>Last EPS command</dt><dd><?= $lastEps
+          ? h(($lastEps['action'] === 'eps_on' ? 'Enable' : 'Disable') . ', ' . $lastEps['status'] . ', ' . date('j M H:i', $lastEps['ts']))
+          : 'none sent from here' ?></dd>
+    </dl>
+    <form method="post" action="<?= h($self) ?>" class="row">
+      <input type="hidden" name="csrf" value="<?= $csrf ?>">
+      <button class="primary" name="command" value="eps_on" onclick="return confirm('Send ENABLE EPS to the inverter?')">Enable EPS</button>
+      <button name="command" value="eps_off" onclick="return confirm('Send DISABLE EPS to the inverter? The LOAD port will not get backup power in a power cut.')">Disable EPS</button>
+    </form>
+  </section>
+
   <section class="card">
     <div class="section-head"><h2>Limits for manual runs</h2></div>
     <p class="help">Set these to suit your battery's datasheet. They only apply to charge and discharge runs started on this page, and don't change anything on the inverter.</p>
@@ -366,7 +391,7 @@ $estimated = ($settings['battery_type'] ?? '') === 'DEFAULT';
       <tbody>
 <?php foreach ($commands as $c): ?>
         <tr><td><?= h(date('j M H:i:s', $c['ts'])) ?></td>
-            <td><?= h(ucfirst($c['action'])) ?><?= $c['watts'] ? ' ' . h($c['watts']) . ' W' : '' ?><?= $c['minutes'] ? ', ' . h($c['minutes']) . ' min' : '' ?></td>
+            <td><?= h(['eps_on' => 'EPS enable', 'eps_off' => 'EPS disable'][$c['action']] ?? ucfirst($c['action'])) ?><?= $c['watts'] ? ' ' . h($c['watts']) . ' W' : '' ?><?= $c['minutes'] ? ', ' . h($c['minutes']) . ' min' : '' ?></td>
             <td><?= h($c['status']) ?></td><td><?= h($c['detail']) ?></td></tr>
 <?php endforeach; ?>
       </tbody>

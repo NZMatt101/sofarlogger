@@ -8,6 +8,7 @@
 //   api.php?action=events&device=ID[&limit=100]           fault/event log
 //   api.php?action=csv&from=YYYY-MM-DD&to=YYYY-MM-DD[&device=ID]
 //   api.php?action=savings                                value of generation using configured tariffs
+//   api.php?action=usage                                  household use per day: from solar, battery, grid; costs
 //   api.php?action=green                                  site power now/today/lifetime as CO2, trees, km, home-days
 
 require __DIR__ . '/inc/common.php';
@@ -250,6 +251,43 @@ case 'savings':
               'periods' => $periods, 'current_rate' => rate_for_day($periods, $today),
               'totals' => $tot, 'monthly' => array_values($monthly), 'yearly' => array_values($yearly),
               'devices' => $devices, 'payback' => $payback]);
+    break;
+
+case 'usage':
+    // Household use from the battery inverter whose CT is on the grid cable (ME3000SP daily counters).
+    // House use = what the house drew; it came from the grid (import), the battery (discharge) or solar directly.
+    $cfg = load_config();
+    $periods = tariff_periods($cfg);
+    $src = null;
+    foreach ($cfg['devices'] ?? [] as $d)
+        if (($d['driver'] ?? '') === 'me3000' && ($d['enabled'] ?? true) && !($d['retired'] ?? false) && ($d['has_ct'] ?? true)) { $src = $d; break; }
+    if (!$src) { json_out(['available' => false]); break; }
+    $st = $db->prepare("SELECT date(ts, 'unixepoch', 'localtime') AS day,
+            MAX(json_extract(data, '$.load_today')) AS used, MAX(json_extract(data, '$.bought_today')) AS imported,
+            MAX(json_extract(data, '$.sold_today')) AS exported, MAX(json_extract(data, '$.charge_today')) AS charged,
+            MAX(json_extract(data, '$.discharge_today')) AS discharged
+        FROM readings WHERE device = :d GROUP BY day HAVING used IS NOT NULL ORDER BY day");
+    $st->bindValue(':d', $src['id']);
+    $rate = function ($day, $key) use ($periods) {
+        if (!$periods) return 0.0;
+        $use = $periods[0];
+        foreach ($periods as $p) { if ($p['from'] <= $day) $use = $p; else break; }
+        return (float)($use[$key] ?? 0);
+    };
+    $days = [];
+    foreach (rows($st) as $r) {
+        $used = (float)$r['used']; $grid = (float)$r['imported']; $batt = (float)$r['discharged'];
+        $imp = $rate($r['day'], 'import_rate'); $exp = $rate($r['day'], 'export_rate');
+        $days[] = [
+            'day' => $r['day'], 'used' => round($used, 2), 'grid' => round($grid, 2), 'battery' => round($batt, 2),
+            'solar' => round(max(0, $used - $grid - $batt), 2),   // the rest came straight from the panels
+            'exported' => round((float)$r['exported'], 2), 'charged' => round((float)$r['charged'], 2),
+            'grid_cost' => round($grid * $imp, 2), 'export_credit' => round((float)$r['exported'] * $exp, 2),
+            'without_system' => round($used * $imp, 2),         // the same use bought entirely from the grid
+        ];
+    }
+    json_out(['available' => true, 'source' => $src['name'] ?? $src['id'], 'since' => $days[0]['day'] ?? null,
+              'symbol' => $cfg['tariffs']['symbol'] ?? '$', 'days' => $days]);
     break;
 
 case 'green':

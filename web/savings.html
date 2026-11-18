@@ -28,6 +28,23 @@
     <div id="payback"></div>
   </section>
 
+  <section class="card" id="usageCard" hidden>
+    <div class="section-head"><h2>Household use</h2>
+      <div class="controls" id="usageBtns">
+        <button data-view="days" class="active">Days</button><button data-view="months">Months</button><button data-view="years">Years</button>
+      </div>
+    </div>
+    <div class="kpis" id="usageKpis"></div>
+    <div class="chart-box"><canvas id="usageChart" role="img" aria-label="Household use by source"></canvas></div>
+    <div class="summary" id="usageNote"></div>
+    <details class="usage-table"><summary>Show as table</summary>
+      <div style="overflow-x:auto"><table class="events">
+        <thead><tr><th id="usagePeriodHead">Day</th><th class="num">House used</th><th class="num">Solar</th><th class="num">Battery</th>
+          <th class="num">Grid</th><th class="num">Self-supplied</th><th class="num">Exported</th><th class="num">Grid cost</th></tr></thead>
+        <tbody id="usageRows"></tbody></table></div>
+    </details>
+  </section>
+
   <section class="card">
     <div class="section-head"><h2>Monthly savings</h2></div>
     <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
@@ -104,9 +121,101 @@ async function load() {
     <td><span class="swatch" style="background:${colorFor(d.id)}"></span><a href="device.html?id=${encodeURIComponent(d.id)}">${esc(d.name)}</a>${d.retired ? ' <span class="badge retired">Retired</span>' : ''}</td>
     <td class="num">${kwh(d.kwh)}</td><td class="num">${money(d.value, 0)}</td></tr>`).join('');
 }
+// ---------------------------------------------------------------- household use
+// Colours validated for colour-blind separation (dataviz palette check); dark mode uses deeper amber.
+// Export is the grid entity flowing the other way: a lighter step of the grid blue, always below zero.
+const USAGE_COLORS = () => matchMedia('(prefers-color-scheme: dark)').matches
+  ? { solar: '#c98500', battery: '#199e70', grid: '#3987e5', exported: '#86b6ef' }
+  : { solar: '#e8a317', battery: '#1baf7a', grid: '#2a78d6', exported: '#9ec5f4' };
+let usage = null, usageView = 'days', usageChart = null;
+
+function usageGroups(view) {
+  const key = view === 'months' ? d => d.day.slice(0, 7) : view === 'years' ? d => d.day.slice(0, 4) : d => d.day;
+  const src = view === 'days' ? usage.days.slice(-31) : usage.days;
+  const g = {};
+  for (const d of src) {
+    const k = key(d);
+    g[k] ??= { key: k, used: 0, solar: 0, battery: 0, grid: 0, exported: 0, grid_cost: 0, export_credit: 0, without_system: 0, n: 0 };
+    for (const f of ['used', 'solar', 'battery', 'grid', 'exported', 'grid_cost', 'export_credit', 'without_system']) g[k][f] += d[f];
+    g[k].n++;
+  }
+  return Object.values(g);
+}
+
+function usageLabel(view, k) {
+  if (view === 'days') return new Date(k + 'T12:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+  if (view === 'months') return new Date(k + '-15T12:00').toLocaleDateString('en-NZ', { month: 'short', year: '2-digit' });
+  return k;
+}
+
+function renderUsage() {
+  const sym = usage.symbol;
+  const money = v => sym + Number(v || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const kwh = (v, d = 1) => `${Number(v || 0).toLocaleString('en-NZ', { maximumFractionDigits: d })} kWh`;
+  const pct = (part, whole) => whole > 0 ? Math.round(100 * part / whole) : 0;
+  const today = isoDate(new Date()), month = today.slice(0, 7), year = today.slice(0, 4);
+  const sum = pred => usage.days.filter(pred).reduce((a, d) => {
+    for (const f of ['used', 'grid', 'grid_cost', 'without_system']) a[f] += d[f];
+    return a; }, { used: 0, grid: 0, grid_cost: 0, without_system: 0 });
+  const since = new Date(usage.since + 'T12:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+  document.getElementById('usageKpis').innerHTML = [
+    ['Today', sum(d => d.day === today)], ['This month', sum(d => d.day.startsWith(month))],
+    ['This year', sum(d => d.day.startsWith(year))], [`Since ${since}`, sum(() => true)],
+  ].map(([k, t]) => `<div class="kpi"><div class="k">${esc(k)}</div><div class="v">${kwh(t.used, t.used >= 100 ? 0 : 1)}</div>
+     <div class="sub">${pct(t.used - t.grid, t.used)}% from solar and battery · grid ${money(t.grid_cost)}</div></div>`).join('');
+
+  const groups = usageGroups(usageView);
+  const c = USAGE_COLORS();
+  const opts = baseOptions();
+  opts.scales.x.stacked = true; opts.scales.y.stacked = true;
+  opts.scales.y.title = { display: true, text: 'kWh  (used above 0 · exported below)', color: css('--muted') };
+  opts.scales.y.beginAtZero = true;
+  opts.scales.y.ticks = { ...opts.scales.y.ticks, callback: v => Math.abs(v) };   // exports read as positive kWh
+  opts.scales.y.grid = { ...opts.scales.y.grid, color: ctx => ctx.tick.value === 0 ? css('--muted') : css('--line') };
+  opts.plugins.tooltip = { callbacks: {
+    label: i => `${i.dataset.label}: ${fmt(Math.abs(i.parsed.y), 1)} kWh`,
+    footer: items => { const g = groups[items[0].dataIndex];
+      return `House used ${fmt(g.used, 1)} kWh · ${pct(g.used - g.grid, g.used)}% self-supplied\nGrid cost ${money(g.grid_cost)}` +
+             (g.exported ? ` · export credit ${money(g.export_credit)}` : ''); } } };
+  const ds = (label, f, color, sign = 1) => ({ label, data: groups.map(g => +(sign * g[f]).toFixed(2)), backgroundColor: color,
+                                       borderColor: css('--card'), borderWidth: sign > 0 ? { top: 2 } : { bottom: 2 },
+                                       borderRadius: 3, borderSkipped: false });
+  usageChart?.destroy();
+  usageChart = new Chart(document.getElementById('usageChart'), { type: 'bar', options: opts, data: {
+    labels: groups.map(g => usageLabel(usageView, g.key)),
+    datasets: [ds('Solar (direct)', 'solar', c.solar), ds('Battery', 'battery', c.battery), ds('Grid import', 'grid', c.grid),
+               ds('Exported to grid', 'exported', c.exported, -1)] } });
+
+  document.getElementById('usagePeriodHead').textContent = { days: 'Day', months: 'Month', years: 'Year' }[usageView];
+  document.getElementById('usageRows').innerHTML = groups.slice().reverse().map(g => `<tr>
+    <td>${esc(usageView === 'days' ? new Date(g.key + 'T12:00').toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' }) : usageLabel(usageView, g.key))}</td>
+    <td class="num">${kwh(g.used)}</td><td class="num">${kwh(g.solar)}</td><td class="num">${kwh(g.battery)}</td><td class="num">${kwh(g.grid)}</td>
+    <td class="num">${pct(g.used - g.grid, g.used)}%</td><td class="num">${kwh(g.exported)}</td><td class="num">${money(g.grid_cost)}</td></tr>`).join('');
+  const all = sum(() => true);
+  document.getElementById('usageNote').textContent =
+    `Measured by ${usage.source} at the grid connection, from ${since}. ` +
+    (all.without_system > 0 ? `Buying all of it from the grid would have cost ${money(all.without_system)}; you paid ${money(all.grid_cost)} for grid power. ` : '') +
+    (usageView === 'days' ? 'Showing the last 31 days.' : '');
+}
+
+async function loadUsage() {
+  try { usage = await getJSON('api.php?action=usage'); } catch (e) { return; }
+  const card = document.getElementById('usageCard');
+  card.hidden = !(usage.available && usage.days.length);
+  if (!card.hidden) renderUsage();
+}
+document.getElementById('usageBtns').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#usageBtns button').forEach(x => x.classList.toggle('active', x === b));
+  usageView = b.dataset.view;
+  if (usage) renderUsage();
+};
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => usage && renderUsage());
+
 load();
-window.solarRetry = load;
-setInterval(load, 300000);
+loadUsage();
+window.solarRetry = () => { load(); loadUsage(); };
+setInterval(() => { load(); loadUsage(); }, 300000);
 </script>
 </body>
 </html>

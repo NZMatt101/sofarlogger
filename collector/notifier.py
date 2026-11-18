@@ -4,7 +4,7 @@
 Runs beside the poller (separate service) and only READS the logger database.
 Checks every 30 s:
   - battery-side devices (ME3000SP, BMS): always; down after `down_after_s` without a good reading
-  - solar inverters on a Wi-Fi stick: only while the sun is up (they sleep at night)
+  - solar inverters on a Wi-Fi stick and PV charge controllers: only while the sun is up (they sleep at night)
   - the poller itself: down if it has stopped polling anything
   - extra HTTP checks from notify.json (e.g. the CSIP gateway Pi)
 SMS goes through SMSGlobal (REST v2 with API key/secret, or the legacy HTTP API).
@@ -180,7 +180,7 @@ class Checker:
             for dev_id, name, typ, driver, last_poll, last_ok, detail in devices:
                 if driver == "import":
                     continue
-                if driver == "omnik":
+                if driver in ("omnik", "pcm60x"):   # both switch off without PV
                     if sun < self.cfg["solar_min_sun_deg"]:
                         continue    # inverter asleep: neither down nor up
                     limit = self.cfg["solar_down_after_s"]

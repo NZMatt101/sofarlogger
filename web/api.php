@@ -80,6 +80,16 @@ function devices_with_latest($db, $site, $id = null) {
                 $r = ['ts' => $snap['ts'], 'power_w' => null, 'energy_today_kwh' => null,
                       'energy_total_kwh' => null, 'data' => json_decode($snap['live'], true)];
             }
+        } elseif ($d['type'] === 'charger') {
+            // DC charger: history every few minutes, newest power from every poll; today's kWh from the history.
+            $live->bindValue(':d', $d['id']);
+            $snap = rows($live)[0] ?? null;
+            $live->reset();
+            if ($snap && $r && $snap['ts'] > $r['ts']) {
+                $data = json_decode($snap['live'], true);
+                $r = ['ts' => $snap['ts'], 'power_w' => $data['pac'] ?? $r['power_w'],
+                      'energy_today_kwh' => $r['energy_today_kwh'], 'energy_total_kwh' => null, 'data' => $data];
+            }
         }
         $d['latest'] = $r;
         $d['state'] = device_state($d, $site['daylight'], $now);

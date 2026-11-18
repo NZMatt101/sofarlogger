@@ -29,7 +29,7 @@
 const COLORS = ['#e8a317', '#3b7dd8', '#1f9d55', '#c0392b', '#8e5bd8', '#17a2b8'];
 const STATE_LABEL = { retired: 'Retired', online: 'Online', night: 'Offline · night', no_data: 'No data', never: 'Waiting',
                       unreachable: 'Unreachable', bad_reply: 'Bad reply', error: 'Error' };
-const TYPE_ICON = { inverter: '☀', battery: '🔋', meter: '⚡' };
+const TYPE_ICON = { inverter: '☀', battery: '🔋', meter: '⚡', charger: '🔌' };
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt = (v, d = 1) => v === null || v === undefined || v === '' ? '—'

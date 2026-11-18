@@ -78,6 +78,18 @@ function serial_ports() {
     return $ports;
 }
 
+// Refuse a serial port another active device already uses. Compares the real device, so /dev/ttyUSB0 and the
+// by-path name of the same adapter count as the same port. A port that isn't plugged in compares by name.
+// ME3000SPs may share one RS485 line (each has its own address), so two of them never clash.
+function port_free($cfg, $port, $exceptId = null, $driver = null) {
+    $real = fn($p) => @realpath($p) ?: $p;
+    foreach ($cfg['devices'] as $other)
+        if (!empty($other['port']) && empty($other['retired']) && ($other['id'] ?? null) !== $exceptId
+            && !($driver === 'me3000' && ($other['driver'] ?? '') === 'me3000')
+            && $real($other['port']) === $real($port))
+            throw new InvalidArgumentException("$port is already used by {$other['name']}");
+}
+
 function slug($s) { return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($s)), '-') ?: 'device'; }
 
 function htpasswd_user() {
@@ -197,6 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $d['retired'] = !empty($_POST['retired']);
             if ($d['driver'] === 'me3000') {
                 [$d['port'], $d['slave']] = rs485_settings($_POST);
+                port_free($cfg, $d['port'], $d['id'], 'me3000');
                 $bms = (string)($_POST['bms'] ?? '');
                 $bmsIds = array_column(array_filter($cfg['devices'], fn($x) => $x['driver'] === 'jbd' && empty($x['retired'])), 'id');
                 if ($bms !== '' && !in_array($bms, $bmsIds, true)) throw new InvalidArgumentException('Unknown battery BMS');
@@ -210,8 +223,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $d['bms'] = $bms;
                 $d['has_ct'] = $hasCt;
                 unset($d['pi_control']['bms']);   // the link above replaces Pi control's own copy
-            } elseif ($d['driver'] === 'jbd') {
+            } elseif (in_array($d['driver'], ['jbd', 'pcm60x'], true)) {
                 $d['port'] = rs485_port($_POST);
+                port_free($cfg, $d['port'], $d['id']);
             } elseif ($d['driver'] !== 'import') {
                 if (!filter_var($_POST['ip'], FILTER_VALIDATE_IP)) throw new InvalidArgumentException('Invalid IP address');
                 $d['ip'] = $_POST['ip'];
@@ -238,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'add_me3000':
             [$port, $slave] = rs485_settings($_POST);
+            port_free($cfg, $port, null, 'me3000');
             $name = trim($_POST['name']);
             if ($name === '') throw new InvalidArgumentException('Name is required');
             $id = $base = 'bat-' . slug($name);
@@ -252,15 +267,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'add_jbd':
             $port = rs485_port($_POST);
-            foreach ($cfg['devices'] as $other)
-                if (($other['port'] ?? null) === $port && empty($other['retired']))
-                    throw new InvalidArgumentException("$port is already used by {$other['name']}");
+            port_free($cfg, $port);
             $name = trim($_POST['name']);
             if ($name === '') throw new InvalidArgumentException('Name is required');
             $id = $base = 'bms-' . slug($name);
             for ($n = 2; find_device($cfg, $id) !== null; $n++) $id = "$base-$n";
             $cfg['devices'][] = ['id' => $id, 'name' => $name, 'type' => 'battery', 'driver' => 'jbd',
                                  'model' => trim($_POST['model']), 'rated_w' => null, 'location' => '', 'port' => $port];
+            save_config($cfg);
+            flash('ok', "Added $name ($id). The poller picks it up within a minute.");
+            $anchor = 'equipment';
+            break;
+
+        case 'add_pcm60x':
+            $port = rs485_port($_POST);
+            port_free($cfg, $port);
+            $name = trim($_POST['name']);
+            if ($name === '') throw new InvalidArgumentException('Name is required');
+            $id = $base = 'chg-' . slug($name);
+            for ($n = 2; find_device($cfg, $id) !== null; $n++) $id = "$base-$n";
+            $cfg['devices'][] = ['id' => $id, 'name' => $name, 'type' => 'charger', 'driver' => 'pcm60x',
+                                 'model' => trim($_POST['model']), 'rated_w' => num_or_null($_POST['rated_w']),
+                                 'location' => '', 'port' => $port];
             save_config($cfg);
             flash('ok', "Added $name ($id). The poller picks it up within a minute.");
             $anchor = 'equipment';
@@ -607,7 +635,7 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
 <?php endforeach; ?>
     </datalist>
     <p class="help">Serial ports: use a <code>/dev/serial/by-path/…</code> name (offered when you click the field). It stays with the USB socket, whereas <code>/dev/ttyUSB0</code> and <code>/dev/ttyUSB1</code> can swap between identical adapters after a restart.</p>
-<?php foreach ($cfg['devices'] as $d): $imported = $d['driver'] === 'import'; $rs485 = in_array($d['driver'], ['me3000', 'jbd'], true); ?>
+<?php foreach ($cfg['devices'] as $d): $imported = $d['driver'] === 'import'; $rs485 = in_array($d['driver'], ['me3000', 'jbd', 'pcm60x'], true); ?>
     <div class="dev<?= !empty($d['retired']) ? ' retired' : '' ?>" id="dev-<?= h($d['id']) ?>">
       <h3><?= h($d['name']) ?> <span class="badge <?= !empty($d['retired']) ? 'retired' : 'online' ?>"><?= !empty($d['retired']) ? 'Retired' : 'Active' ?></span>
           <span class="help" style="margin:0"><?= h($d['id']) ?></span></h3>
@@ -711,6 +739,19 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
         <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="add_jbd">
         <label>Name <input name="name" required value="Battery BMS"></label>
         <label>Model <input name="model" value="JBD BMS"></label>
+        <label>Serial port <input name="port" list="serial-ports" required placeholder="/dev/serial/by-path/…"></label>
+        <div class="actions"><button class="primary">Add</button></div>
+      </form>
+    </div>
+
+    <div class="dev add">
+      <h3>➕ Add PV charge controller (MPP Solar PCM60X, on a USB-RS232 adapter)</h3>
+      <p class="help">Monitoring only: the logger reads the charger's power, voltages, warnings and settings, and never changes them. It charges the battery straight from its own panels, so its energy counts as solar generation (it reaches the house through the battery inverter, which already counts it as house use). It switches off when there is no PV, so it shows as asleep at night. It needs an RS232 adapter (e.g. PL2303), not one of the RS485 adapters. Rated power: the size of its panel array.</p>
+      <form class="grid" method="post">
+        <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="add_pcm60x">
+        <label>Name <input name="name" required value="DC solar charger"></label>
+        <label>Model <input name="model" value="PCM60X"></label>
+        <label>Rated power (W) <input name="rated_w" type="number" min="0" placeholder="array size"></label>
         <label>Serial port <input name="port" list="serial-ports" required placeholder="/dev/serial/by-path/…"></label>
         <div class="actions"><button class="primary">Add</button></div>
       </form>

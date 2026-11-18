@@ -313,14 +313,15 @@ class Me3000Driver:
         raise PollError("bad_reply", f"invalid reply: {buf[:32].hex()}")
 
     @staticmethod
-    def open_port(port):
+    def open_port(port, baud=9600):
         import termios  # Linux only; the rest of this module also runs on the PC for tests
+        speed = {9600: termios.B9600, 2400: termios.B2400}[baud]
         fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         try:
             a = termios.tcgetattr(fd)
             a[0] = a[1] = a[3] = 0
             a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-            a[4] = a[5] = termios.B9600
+            a[4] = a[5] = speed
             termios.tcsetattr(fd, termios.TCSANOW, a)
             termios.tcflush(fd, termios.TCIOFLUSH)
         except Exception:
@@ -582,6 +583,209 @@ class JbdBmsDriver:
         return Reading(None, None, None, self.decode(basic, cells), f3.hex() + " " + f4.hex(), snapshot=True)
 
 
+class Pcm60xDriver:
+    """MPP Solar PCM60X MPPT charge controller on RS232 (2400 8N1), MPP Solar protocol PI34.
+
+    Read-only: the command builder only accepts the query commands below; the protocol's setting commands
+    (PBT, PBAV, PBFV, PBEQE, PF factory reset, ...) are never built. Frames are ASCII + CRC-16/XModem
+    (big-endian; a CRC byte of 0x0A, 0x0D or 0x28 is sent as that value + 1) + CR; replies start with '('.
+    Voltage settings are per 12 V unit (x4 on a 48 V battery). The PCM keeps no energy counter, so charge
+    energy is integrated here from its charge power. Without PV it switches off after about 2 minutes, so no
+    reply in the dark (or with no PV) is normal: the site page shows it as night like a solar inverter.
+    The charge energy counts as solar generation; it reaches the house as battery discharge, which the
+    ME3000SP's CT already counts as house use, so nothing is double counted.
+    """
+    STORE_ON_CHANGE = False
+    QUERIES = ("QPI", "QID", "QVFW", "QPIRI", "QBEQI", "QPIGS", "QPIWS")
+    SETTINGS_EVERY = 3600
+    MAX_GAP = 300           # don't integrate across a gap longer than this (asleep or not answering)
+    BATTERY_TYPES = {"00": "AGM", "01": "Flooded", "02": "Customized"}
+    RATED_V = {"00": "Auto-detect", "01": "12 V", "02": "24 V", "03": "36 V", "04": "48 V"}
+    WARNINGS = {1: "over charge current", 2: "over temperature", 3: "battery voltage under", 4: "battery voltage high",
+                5: "PV high loss", 6: "battery temperature too low", 7: "battery temperature too high",
+                20: "PV low loss", 21: "PV high derating", 22: "temperature high derating",
+                23: "battery temperature low alarm", 30: "battery low warning"}
+    FIELDS = [
+        {"key": "pac", "label": "Charge power", "unit": "W", "decimals": 0},
+        {"key": "pv_v", "label": "PV voltage", "unit": "V", "decimals": 1},
+        {"key": "charge_a", "label": "Charge current", "unit": "A", "decimals": 2},
+        {"key": "batt_v", "label": "Battery voltage (at charger)", "unit": "V", "decimals": 2},
+        {"key": "temp", "label": "Charger temperature", "unit": "°C", "decimals": 0},
+        {"key": "charging", "label": "Charging", "unit": "", "decimals": None},
+        {"key": "warnings", "label": "Warnings", "unit": "", "decimals": None},
+        {"key": "battery_type", "label": "Battery type setting", "unit": "", "decimals": None},
+        {"key": "absorption_v", "label": "Absorption (bulk) voltage setting", "unit": "V", "decimals": 2},
+        {"key": "float_v", "label": "Float voltage setting", "unit": "V", "decimals": 2},
+        {"key": "max_charge_a", "label": "Max charge current setting", "unit": "A", "decimals": 0},
+        {"key": "cv_minutes", "label": "Absorption time setting", "unit": "min", "decimals": 0},
+        {"key": "equalisation", "label": "Equalisation", "unit": "", "decimals": None},
+        {"key": "eq_v", "label": "Equalise voltage setting", "unit": "V", "decimals": 2},
+        {"key": "eq_days_left", "label": "Days to next equalise", "unit": "", "decimals": 0},
+        {"key": "rated_v", "label": "Battery voltage setting", "unit": "", "decimals": None},
+        {"key": "settings_read", "label": "Settings last read", "unit": "", "decimals": None},
+        {"key": "charger_sn", "label": "Charger serial", "unit": "", "decimals": None},
+        {"key": "firmware", "label": "Firmware", "unit": "", "decimals": None},
+    ]
+
+    def __init__(self):
+        self.identity = {}   # port -> {charger_sn, firmware, protocol}
+        self.settings = {}   # port -> (ts, decoded settings)
+        self.energy = {}     # port -> (last ts, last W, running kWh since the logger started)
+
+    @staticmethod
+    def crc(data):
+        c = 0
+        for b in data:
+            c ^= b << 8
+            for _ in range(8):
+                c = ((c << 1) ^ 0x1021) if c & 0x8000 else c << 1
+                c &= 0xFFFF
+        fix = lambda v: v + 1 if v in (0x0A, 0x0D, 0x28) else v
+        return bytes([fix(c >> 8), fix(c & 0xFF)])
+
+    @classmethod
+    def build(cls, cmd):
+        if cmd not in cls.QUERIES:
+            raise ValueError("this driver only sends queries")
+        return cmd.encode() + cls.crc(cmd.encode()) + b"\r"
+
+    @classmethod
+    def parse(cls, buf):
+        """Fields of a CRC-valid '(...' reply anywhere in buf (the PCM may send noise as it wakes)."""
+        start = buf.find(b"(")
+        while start >= 0:
+            end = buf.find(b"\r", start)
+            if end < 0:
+                break
+            f = buf[start:end]
+            if len(f) > 3 and cls.crc(f[:-2]) == f[-2:]:
+                body = f[1:-2].decode("ascii", "replace")
+                if body.startswith("NAK"):
+                    raise PollError("bad_reply", "the charger refused the query (NAK)")
+                return body.split()
+            start = buf.find(b"(", start + 1)
+        raise PollError("bad_reply", f"invalid reply: {buf[:40]!r}")
+
+    @classmethod
+    def ask(cls, fd, port, cmd):
+        last = None
+        for _ in range(2):  # one retry: a single garbled frame shouldn't mark the device down
+            buf = Me3000Driver.transact(fd, cls.build(cmd), 2.5)
+            try:
+                return cls.parse(buf)
+            except PollError as e:
+                last = e if buf else PollError("unreachable", f"no reply from the charger on {port} "
+                                                              "(it switches off when there is no PV)")
+            time.sleep(0.3)
+        raise last
+
+    @classmethod
+    def decode_status(cls, f, warn):
+        if len(f) < 11:
+            raise PollError("bad_reply", f"status reply too short ({len(f)} fields)")
+        bits = f[10]
+        num = lambda s: float(s.lstrip("+"))
+        active = [cls.WARNINGS.get(i + 1, f"a{i + 1}") for i, c in enumerate(warn[0] if warn else "") if c == "1"]
+        return {
+            "pac": int(f[5]),
+            "pv_v": num(f[0]),
+            "batt_v": num(f[1]),
+            "charge_a": num(f[2]),
+            "charge_a1": num(f[3]),
+            "charge_a2": num(f[4]),
+            "temp": int(f[6]),
+            "remote_batt_v": num(f[7]),
+            "charging": "Yes" if len(bits) > 1 and bits[1] == "1" else "No",
+            "params_modified": "Yes" if bits[:1] == "1" else "No",
+            "status_bits": bits,
+            "warnings": ", ".join(active) or ("None" if warn else "not read"),
+        }
+
+    @classmethod
+    def decode_settings(cls, ri, eq):
+        """QPIRI and QBEQI replies. Voltages are per 12 V unit in the protocol; returned here as battery volts."""
+        units = int(ri[10]) if len(ri) > 10 and ri[10].isdigit() and int(ri[10]) > 0 else max(1, int(ri[1]) // 12)
+        s = {
+            "rated_w": int(ri[0]),
+            "nominal_v": int(ri[1]),
+            "max_charge_a": float(ri[2]),
+            "absorption_v": round(float(ri[3]) * units, 2),
+            "float_v": round(float(ri[4]) * units, 2),
+            "battery_type": cls.BATTERY_TYPES.get(ri[5], f"Unknown ({ri[5]})"),
+            "remote_batt_sense": "On" if ri[6] == "01" else "Off",
+            "temp_comp_mv": float(ri[7].lstrip("+")),
+            "remote_temp_sense": "On" if ri[8] == "01" else "Off",
+            "rated_v": cls.RATED_V.get(ri[9], f"Unknown ({ri[9]})"),
+            "low_warning_v": round(float(ri[11]) * units, 2) if len(ri) > 11 else None,
+            "low_shutdown": ("On" if ri[12] == "1" else "Off") if len(ri) > 12 else None,
+        }
+        if eq and len(eq) >= 8:
+            # The document says flag 0 = enabled, but on a real unit (firmware 00003.01) PBEQE0 (disable) was
+            # accepted and the flag stayed 0, so 0 = off, the same as the PBEQEn command.
+            s.update({
+                "equalisation": {"0": "Off", "1": "On"}.get(eq[0], f"Unknown ({eq[0]})"),
+                "eq_minutes": int(eq[1]),
+                "eq_interval_days": int(eq[2]),
+                "eq_max_a": int(eq[3]),
+                "eq_days_left": int(eq[4]),
+                "eq_v": round(float(eq[5]) * units, 2),
+                "cv_minutes": int(eq[6]),
+                "eq_timeout_minutes": int(eq[7]),
+            })
+        return s
+
+    def integrate(self, port, now, watts):
+        """Running charge kWh since the logger started; local_today() turns it into today's figure."""
+        last_ts, last_w, kwh = self.energy.get(port, (None, 0, 0.0))
+        if last_ts is not None and 0 < now - last_ts <= self.MAX_GAP:
+            kwh += (last_w + watts) / 2 * (now - last_ts) / 3600000
+        self.energy[port] = (now, watts, kwh)
+        return round(kwh, 4)
+
+    def poll(self, dev):
+        port = dev.get("port", "/dev/ttyUSB2")
+        try:
+            fd = Me3000Driver.open_port(port, 2400)
+        except OSError as e:
+            raise PollError("unreachable", f"cannot open {port}: {e.strerror or e}")
+        try:
+            status = self.ask(fd, port, "QPIGS")
+            try:
+                warn = self.ask(fd, port, "QPIWS")
+            except PollError:
+                warn = None
+            if port not in self.identity:
+                try:
+                    self.identity[port] = {"protocol": " ".join(self.ask(fd, port, "QPI")),
+                                           "charger_sn": " ".join(self.ask(fd, port, "QID")),
+                                           "firmware": " ".join(self.ask(fd, port, "QVFW")).replace("VERFW:", "")}
+                except PollError as e:
+                    log.warning("%s: could not read charger identity: %s", dev.get("id"), e.detail)
+            now = time.time()
+            if now - self.settings.get(port, (0, None))[0] >= self.SETTINGS_EVERY:
+                try:
+                    ri = self.ask(fd, port, "QPIRI")
+                    eq = self.ask(fd, port, "QBEQI")
+                    self.settings[port] = (now, dict(self.decode_settings(ri, eq),
+                                                     settings_read=time.strftime("%Y-%m-%d %H:%M", time.localtime(now))))
+                except (PollError, ValueError, IndexError) as e:
+                    log.warning("%s: could not read charger settings: %s", dev.get("id"), e)
+        except OSError as e:
+            raise PollError("unreachable", f"{port}: {e.strerror or e}")
+        finally:
+            os.close(fd)
+        try:
+            data = self.decode_status(status, warn)
+        except (ValueError, IndexError) as e:
+            raise PollError("bad_reply", f"could not decode status: {e}")
+        settings = self.settings.get(port, (0, None))[1]
+        data.update(self.identity.get(port, {}))
+        if settings:
+            data.update(settings)
+        data["e_today"] = self.integrate(port, now, data["pac"])
+        return Reading(data["pac"], data["e_today"], None, data, " ".join(status), snapshot=True, settings=settings)
+
+
 class Me3000Control:
     """Commands to the ME3000SP (SOFAR's Passive Mode protocol). Kept apart from Me3000Driver, which only reads.
 
@@ -726,7 +930,8 @@ class Me3000Control:
         return "; ".join(notes)
 
 
-DRIVERS = {"omnik": OmnikDriver, "import": ImportedDriver, "me3000": Me3000Driver, "jbd": JbdBmsDriver}
+DRIVERS = {"omnik": OmnikDriver, "import": ImportedDriver, "me3000": Me3000Driver, "jbd": JbdBmsDriver,
+           "pcm60x": Pcm60xDriver}
 
 # Control timing (seconds) and default safety limits; limits can be changed per device on the battery page.
 CONTROL_COMMAND_MAX_AGE = 120   # a queued command older than this is dropped, never applied late

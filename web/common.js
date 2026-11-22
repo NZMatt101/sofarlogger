@@ -153,14 +153,42 @@ function baseOptions() {
   };
 }
 
+// Stacking only adds points that share an x value, and each device is read at its own moments, so put every
+// device on one grid of `step`-second slots (average of its readings in the slot). A slot with no reading
+// repeats the device's last value for up to 15 minutes, then counts as 0 (asleep or offline).
+function onCommonGrid(byDevice, step = 300) {
+  const all = Object.values(byDevice).flat();
+  if (!all.length) return {};
+  const first = Math.floor(Math.min(...all.map(r => r.ts)) / step) * step;
+  const last = Math.floor(Math.max(...all.map(r => r.ts)) / step) * step;
+  const out = {};
+  for (const [id, rs] of Object.entries(byDevice)) {
+    const sum = {}, n = {};
+    for (const r of rs) {
+      if (r.power_w === null || r.power_w === undefined) continue;
+      const k = Math.floor(r.ts / step) * step;
+      sum[k] = (sum[k] || 0) + r.power_w; n[k] = (n[k] || 0) + 1;
+    }
+    let held = null, heldAt = -Infinity;
+    out[id] = [];
+    for (let t = first; t <= last; t += step) {
+      if (n[t]) { held = sum[t] / n[t]; heldAt = t; }
+      out[id].push({ x: t * 1000, y: n[t] ? held : (held !== null && t - heldAt <= 900 ? held : 0) });
+    }
+  }
+  return out;
+}
+
 // Day power chart. names: {deviceId: label}; stacked shows site total as a stacked area.
 function renderDayChart(canvas, existing, day, names, stacked) {
   const byDevice = {};
   for (const r of day.rows) (byDevice[r.device] ??= []).push(r);
+  const grid = stacked ? onCommonGrid(byDevice) : null;
   const datasets = Object.entries(byDevice).map(([id, rs]) => ({
-    label: names[id] || id, data: rs.map(r => ({ x: r.ts * 1000, y: r.power_w })),
+    label: names[id] || id, data: stacked ? grid[id] : rs.map(r => ({ x: r.ts * 1000, y: r.power_w })),
     borderColor: colorFor(id), backgroundColor: colorFor(id) + (stacked ? '99' : '33'),
-    fill: stacked ? 'stack' : true, pointRadius: 0, borderWidth: 2, tension: 0.2, spanGaps: 15 * 60 * 1000,
+    fill: stacked ? 'stack' : true, pointRadius: 0, borderWidth: stacked ? 1.5 : 2, tension: stacked ? 0 : 0.2,
+    spanGaps: 15 * 60 * 1000,
   }));
   const opts = baseOptions();
   opts.parsing = false;
@@ -168,9 +196,11 @@ function renderDayChart(canvas, existing, day, names, stacked) {
                     ticks: { ...opts.scales.x.ticks, stepSize: 3 * 3600 * 1000, callback: v => timeStr(v / 1000) } };
   opts.scales.y.title = { display: true, text: 'W', color: css('--muted') };
   if (stacked) opts.scales.y.stacked = true;
-  opts.interaction = { mode: 'nearest', axis: 'x', intersect: false };
+  opts.interaction = stacked ? { mode: 'index', intersect: false } : { mode: 'nearest', axis: 'x', intersect: false };
   opts.plugins.tooltip = { callbacks: { title: items => timeStr(items[0].parsed.x / 1000),
                                         label: i => `${i.dataset.label}: ${Math.round(i.parsed.y)} W` } };
+  if (stacked && datasets.length > 1)
+    opts.plugins.tooltip.callbacks.footer = items => `Total: ${Math.round(items.reduce((s, i) => s + (i.parsed.y || 0), 0))} W`;
   existing?.destroy();
   return { chart: new Chart(canvas, { type: 'line', data: { datasets }, options: opts }), byDevice };
 }

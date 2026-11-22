@@ -371,7 +371,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'dropbox_start':
             $key = trim($_POST['app_key'] ?? '');
-            if (!preg_match('/^[a-z0-9]{8,32}$/i', $key)) throw new InvalidArgumentException('That does not look like a Dropbox App key.');
+            if (!preg_match('/^[a-z0-9]{8,32}$/i', $key))
+                throw new InvalidArgumentException('That does not look like a Dropbox App key (Settings → Credentials → App key, about 15 letters and digits). The App secret isn\'t needed.');
             [$verifier, $challenge] = pkce_pair();
             $_SESSION['dbx'] = ['key' => $key, 'verifier' => $verifier, 'url' => dropbox_auth_url($key, $challenge)];
             $anchor = 'backup';
@@ -380,7 +381,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'dropbox_finish':
             $anchor = 'backup';
             if (empty($_SESSION['dbx'])) throw new InvalidArgumentException('Start the Dropbox connection again.');
-            dropbox_finish_auth($_SESSION['dbx']['key'], $_POST['code'] ?? '', $_SESSION['dbx']['verifier']);
+            try {
+                dropbox_finish_auth($_SESSION['dbx']['key'], $_POST['code'] ?? '', $_SESSION['dbx']['verifier']);
+            } catch (RuntimeException $e) {
+                if (stripos($e->getMessage(), 'invalid_client') !== false) {
+                    // Wrong or deleted key: clear this attempt so the next try starts from the App key step.
+                    $bad = $_SESSION['dbx']['key'];
+                    unset($_SESSION['dbx']);
+                    throw new RuntimeException("Dropbox doesn't recognise the App key $bad. Copy it again from the app's "
+                        . 'Settings → Credentials → App key, then enter it below and allow access again.');
+                }
+                throw $e;
+            }
             unset($_SESSION['dbx']);
             flash('ok', 'Dropbox connected. Use “Back up now” to test it, then tick “Automatic backups”.');
             break;
@@ -857,23 +869,27 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
             <strong>Scoped access</strong> → <strong>App folder</strong> → name it, e.g. <em>Solar logger backup</em>.</li>
         <li>On the app's <strong>Permissions</strong> tab tick <code>files.metadata.read</code>, <code>files.content.write</code> and
             <code>files.content.read</code>, then <strong>Submit</strong>.</li>
-        <li>On the <strong>Settings</strong> tab copy the <strong>App key</strong> and paste it here.</li>
+        <li>On the <strong>Settings</strong> tab, check <strong>OAuth 2 → Allow public clients (Implicit Grant &amp; PKCE)</strong> is set to <strong>Allow</strong>.</li>
+        <li>On the same tab, under <strong>Credentials</strong>, copy the <strong>App key</strong> and paste it here.
+            The <strong>App secret</strong> isn't needed: leave it hidden.</li>
       </ol>
       <form class="grid" method="post">
         <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="dropbox_start">
-        <label>Dropbox App key <input name="app_key" required autocomplete="off" spellcheck="false"></label>
+        <label>App key <input name="app_key" required autocomplete="off" spellcheck="false" placeholder="from Settings → Credentials"></label>
         <div class="actions"><button class="primary">Next →</button></div>
       </form>
 <?php elseif (!$dbxCreds && $dbxPending): ?>
+      <p class="help">Connecting with App key <code><?= h($dbxPending['key']) ?></code>. If that isn't the key shown under your app's
+        <strong>Settings → Credentials → App key</strong>, press <strong>Start again</strong>.</p>
       <p class="help"><strong>1.</strong> <a href="<?= h($dbxPending['url']) ?>" target="_blank" rel="noopener">Open Dropbox to allow access</a>
         (sign in, then click <strong>Continue</strong> / <strong>Allow</strong>).<br>
-        <strong>2.</strong> Dropbox then shows an access code. Paste it here.</p>
+        <strong>2.</strong> Dropbox then shows an access code. Paste it here. Each code works once, for a few minutes.</p>
       <form class="grid" method="post">
         <input type="hidden" name="csrf" value="<?= $csrf ?>">
         <label>Access code <input name="code" autocomplete="off" spellcheck="false"></label>
         <div class="actions">
           <button class="primary" name="action" value="dropbox_finish">Connect</button>
-          <button name="action" value="dropbox_cancel" formnovalidate>Cancel</button>
+          <button name="action" value="dropbox_cancel" formnovalidate>Start again (change App key)</button>
         </div>
       </form>
 <?php else: ?>

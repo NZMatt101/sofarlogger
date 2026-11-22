@@ -94,8 +94,9 @@ function save_config($cfg) {
 const GREEN_DEFAULTS = [
     'heading' => 'Powered by the sun',
     'message' => '',
-    'panels' => null,
+    'panels' => null,            // single-array sites (older settings); see 'arrays'
     'panel_w' => null,
+    'arrays' => [],              // [{label, panels, panel_w}], one per group of identical panels
     'install_date' => null,
     'lifetime_adjust_kwh' => 0.0,
     'co2_kg_per_kwh' => 0.074,   // NZ grid average emissions (MfE guidance, recent years)
@@ -110,6 +111,21 @@ function green_settings($cfg) {
         $g[$k] = (float)$g[$k];
     $g['panels'] = $g['panels'] === null ? null : (int)$g['panels'];
     $g['panel_w'] = $g['panel_w'] === null ? null : (float)$g['panel_w'];
+    // Panel arrays: the list if set, else the older single count x rating. Totals keep the old keys working
+    // (the public figures and thedrift.nz read 'panels', 'panel_w' and 'kwp').
+    $arrays = [];
+    foreach ((array)$g['arrays'] as $a)
+        if ((int)($a['panels'] ?? 0) > 0 && (float)($a['panel_w'] ?? 0) > 0)
+            $arrays[] = ['label' => substr(trim((string)($a['label'] ?? '')), 0, 40),
+                         'panels' => (int)$a['panels'], 'panel_w' => (float)$a['panel_w']];
+    if (!$arrays && $g['panels'] && $g['panel_w'])
+        $arrays[] = ['label' => '', 'panels' => $g['panels'], 'panel_w' => $g['panel_w']];
+    $g['arrays'] = $arrays;
+    if ($arrays) {
+        $g['panels'] = array_sum(array_column($arrays, 'panels'));
+        $g['panel_w'] = count($arrays) === 1 ? $arrays[0]['panel_w'] : null;   // mixed ratings: no single value
+    }
+    $g['kwp'] = $arrays ? round(array_sum(array_map(fn($a) => $a['panels'] * $a['panel_w'], $arrays)) / 1000, 3) : null;
     return $g;
 }
 

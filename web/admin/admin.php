@@ -154,13 +154,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             };
             $date = trim($_POST['install_date'] ?? '');
             if ($date !== '' && !DateTime::createFromFormat('!Y-m-d', $date)) throw new InvalidArgumentException("Bad date: $date");
-            $panels = $pos('panels', 10000);
+            $arrays = [];
+            foreach (array_slice((array)($_POST['array'] ?? []), 0, 4) as $i => $a) {
+                $n = num_or_null($a['panels'] ?? ''); $w = num_or_null($a['panel_w'] ?? '');
+                $label = substr(trim((string)($a['label'] ?? '')), 0, 40);
+                if ($n === null && $w === null && $label === '') continue;
+                if ($n === null || $w === null || $n < 1 || $n > 10000 || $w < 1 || $w > 2000 || floor($n) != $n)
+                    throw new InvalidArgumentException('Panel array ' . ($i + 1) . ': enter a whole number of panels and the rating in W (1 to 2000).');
+                $arrays[] = ['label' => $label, 'panels' => (int)$n, 'panel_w' => $w];
+            }
             $adjust = num_or_null($_POST['lifetime_adjust_kwh'] ?? '');
             $cfg['green'] = [
                 'heading' => substr(trim($_POST['heading'] ?? ''), 0, 80),
                 'message' => substr(trim($_POST['message'] ?? ''), 0, 500),
-                'panels' => $panels === null ? null : (int)$panels,
-                'panel_w' => $pos('panel_w', 2000),
+                'arrays' => $arrays,          // replaces the older single panels / panel_w fields
+                'panels' => null,
+                'panel_w' => null,
                 'install_date' => $date ?: null,
                 'lifetime_adjust_kwh' => $adjust ?? 0,
                 'co2_kg_per_kwh' => $pos('co2_kg_per_kwh', 2),
@@ -595,9 +604,29 @@ $fmtTime = fn($ts) => $ts ? date('j M Y H:i', $ts) : '—';
       <input type="hidden" name="csrf" value="<?= $csrf ?>"><input type="hidden" name="action" value="green">
       <label class="wide">Heading <input name="heading" maxlength="80" value="<?= h($green['heading'] ?? '') ?>" placeholder="<?= h(GREEN_DEFAULTS['heading']) ?>"></label>
       <label class="wide">Message <input name="message" maxlength="500" value="<?= h($green['message'] ?? '') ?>" placeholder="Optional note for guests"></label>
-      <label>Number of panels <input name="panels" type="number" min="0" step="1" value="<?= h($green['panels'] ?? '') ?>"></label>
-      <label>Panel rating (W each) <input name="panel_w" type="number" min="0" step="1" value="<?= h($green['panel_w'] ?? '') ?>"></label>
-      <label>Array size <input value="<?= !empty($green['panels']) && !empty($green['panel_w']) ? h(number_format($green['panels'] * $green['panel_w'] / 1000, 2)) . ' kWp' : '—' ?>" disabled></label>
+<?php
+  $gs = green_settings($cfg);
+  $arrRows = $gs['arrays'];
+  while (count($arrRows) < 4) $arrRows[] = ['label' => '', 'panels' => '', 'panel_w' => ''];
+?>
+      <div class="wide">
+        <div class="help" style="margin-bottom:4px">Solar panels: one row per group of identical panels (leave spare rows blank).</div>
+        <div style="overflow-x:auto"><table class="events">
+          <thead><tr><th>Label (optional)</th><th class="num">Panels</th><th class="num">W each</th><th class="num">Size</th></tr></thead>
+          <tbody>
+<?php foreach ($arrRows as $i => $a): ?>
+            <tr>
+              <td><input name="array[<?= $i ?>][label]" maxlength="40" value="<?= h($a['label']) ?>" placeholder="<?= $i === 0 ? 'e.g. Roof, on the inverter' : '' ?>"></td>
+              <td class="num"><input name="array[<?= $i ?>][panels]" type="number" min="1" step="1" style="width:80px" value="<?= h($a['panels']) ?>"></td>
+              <td class="num"><input name="array[<?= $i ?>][panel_w]" type="number" min="1" step="1" style="width:90px" value="<?= h($a['panel_w']) ?>"></td>
+              <td class="num"><?= $a['panels'] && $a['panel_w'] ? h(number_format($a['panels'] * $a['panel_w'] / 1000, 2)) . ' kW' : '' ?></td>
+            </tr>
+<?php endforeach; ?>
+          </tbody>
+          <tfoot><tr><th>Total</th><th class="num"><?= $gs['panels'] ? h($gs['panels']) : '—' ?></th><th></th>
+            <th class="num"><?= $gs['kwp'] ? h(number_format($gs['kwp'], 2)) . ' kWp' : '—' ?></th></tr></tfoot>
+        </table></div>
+      </div>
       <label>Generating since <input name="install_date" type="date" value="<?= h($green['install_date'] ?? '') ?>"></label>
       <label>Lifetime adjustment (kWh) <input name="lifetime_adjust_kwh" type="number" step="0.1" value="<?= h($green['lifetime_adjust_kwh'] ?? '') ?>" placeholder="0"></label>
       <label>Grid CO₂ (kg per kWh) <input name="co2_kg_per_kwh" type="number" min="0" step="0.001" value="<?= h($green['co2_kg_per_kwh'] ?? '') ?>" placeholder="<?= GREEN_DEFAULTS['co2_kg_per_kwh'] ?>"></label>

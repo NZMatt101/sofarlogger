@@ -120,7 +120,10 @@ async function load() {
   document.getElementById('lifeKwh').textContent = `${num(g.lifetime.kwh)} kWh`;
 
   const sys = g.system, bits = [];
-  if (sys.panels) bits.push(`<span>☀ <strong>${num(sys.panels)}</strong> solar panels${sys.panel_w ? ` × ${num(sys.panel_w)} W` : ''}</span>`);
+  const arrays = sys.arrays || [];
+  if (arrays.length > 1)   // mixed panels: "12 solar panels (8 × 300 W + 4 × 460 W)"
+    bits.push(`<span>☀ <strong>${num(sys.panels)}</strong> solar panels <span style="color:var(--muted)">(${arrays.map(a => `${num(a.panels)} × ${num(a.panel_w)} W`).join(' + ')})</span></span>`);
+  else if (sys.panels) bits.push(`<span>☀ <strong>${num(sys.panels)}</strong> solar panels${sys.panel_w ? ` × ${num(sys.panel_w)} W` : ''}</span>`);
   if (sys.kwp) bits.push(`<span>⚡ <strong>${num(sys.kwp, 2)} kW</strong> array</span>`);
   if (sys.since) {
     const yrs = (Date.now() - new Date(sys.since + 'T00:00')) / (365.25 * 86400000);

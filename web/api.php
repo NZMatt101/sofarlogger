@@ -322,9 +322,8 @@ case 'green':
               'sunrise' => $site['sunrise'], 'sunset' => $site['sunset'],
               'state' => $state, 'now_kw' => $state === 'online' ? $now_w / 1000 : null, 'last_reading' => $last,
               'today' => $impact($today), 'lifetime' => $impact($lifetime),
-              'system' => ['panels' => $g['panels'], 'panel_w' => $g['panel_w'],
-                           'kwp' => $g['panels'] && $g['panel_w'] ? $g['panels'] * $g['panel_w'] / 1000 : null,
-                           'since' => $since],
+              'system' => ['panels' => $g['panels'], 'panel_w' => $g['panel_w'], 'arrays' => $g['arrays'],
+                           'kwp' => $g['kwp'], 'since' => $since],
               'settings' => $g]);
     break;
 

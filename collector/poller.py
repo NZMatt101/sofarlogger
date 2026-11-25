@@ -468,6 +468,7 @@ class JbdBmsDriver:
     The BMS's own state of charge (coulomb counting) is the reference; inverters on a 'DEFAULT' battery type guess.
     """
     STORE_ON_CHANGE = False  # values move every poll: store on the interval only, the SD card is small
+    POLL_SECONDS = 10        # read often: Pi control (and a future CAN link to the inverter) need fresh values
     PROTECTION = ("cell over-voltage", "cell under-voltage", "pack over-voltage", "pack under-voltage",
                   "charge over-temperature", "charge under-temperature", "discharge over-temperature",
                   "discharge under-temperature", "charge over-current", "discharge over-current", "short circuit",
@@ -1135,6 +1136,8 @@ class Poller:
         migrate(self.db)
         self.drivers = {name: cls() for name, cls in DRIVERS.items()}
         self.last_stored = {}  # device id -> (ts, data)
+        self.latest = {}       # device id -> (ts, data) from the newest good poll, kept in memory
+        self.last_written = {} # device id -> ts snapshot/status were last written to the DB (fast pollers)
         self.day_state = {}    # device id -> {day, acc, base, last_raw}; see local_today()
         self.control_timers = {}  # device id -> {hb, guard, fails, retry}
         self.pi_state = {}        # device id -> Pi control state; see pi_tick()
@@ -1231,15 +1234,29 @@ class Poller:
             "detail=excluded.detail",
             (dev["id"], now, now if ok else None, status, detail))
 
+    def poll_interval(self, dev):
+        """Seconds between polls: the device's own 'poll_seconds', else the driver's default, else the site's."""
+        base = self.cfg.get("poll_seconds", 60)
+        iv = dev.get("poll_seconds") or getattr(DRIVERS[dev["driver"]], "POLL_SECONDS", None) or base
+        return max(2.0, min(float(iv), float(base)))
+
+    # Devices read faster than this write their snapshot and status to the DB at most this often (SD card wear);
+    # the newest values are always in self.latest for Pi control.
+    FAST_WRITE_SECONDS = 30
+
     def poll_one(self, dev):
         now = int(time.time())
+        fast = self.poll_interval(dev) < self.FAST_WRITE_SECONDS
         try:
             driver = self.drivers[dev["driver"]]
             r = driver.poll(dev)
         except PollError as e:
             self.set_status(dev, now, e.status, e.detail)
             return
-        self.save_snapshot(dev["id"], now, r)
+        self.latest[dev["id"]] = (now, r.data)
+        write_now = not fast or now - self.last_written.get(dev["id"], 0) >= self.FAST_WRITE_SECONDS
+        if write_now:
+            self.save_snapshot(dev["id"], now, r)
         today = self.local_today(dev["id"], now, r.energy_today_kwh)
         prev = self.last_stored.get(dev["id"])
         changed = prev is not None and prev[1] != r.data and getattr(driver, "STORE_ON_CHANGE", True)
@@ -1252,7 +1269,9 @@ class Poller:
             self.last_stored[dev["id"]] = (now, r.data)
             log.info("%s: stored power=%sW today=%skWh (inverter %s) total=%skWh",
                      dev["id"], r.power_w, today, r.energy_today_kwh, r.energy_total_kwh)
-        self.set_status(dev, now, "ok", ok=True)
+        if write_now:
+            self.set_status(dev, now, "ok", ok=True)
+            self.last_written[dev["id"]] = now
 
     def save_snapshot(self, dev_id, now, r):
         if r.snapshot:
@@ -1376,7 +1395,10 @@ class Poller:
         bms_id = linked_bms_id(self.cfg, dev)
         if not bms_id:
             return None
+        mem = self.latest.get(bms_id)
         row = self.db.execute("SELECT ts, live FROM device_snapshot WHERE device = ?", (bms_id,)).fetchone()
+        if mem and (not row or mem[0] >= row[0]):   # the in-memory reading is the newest (fast BMS polling)
+            return {**mem[1], "ts": mem[0]}
         return {**json.loads(row[1]), "ts": row[0]} if row else None
 
     def pi_save(self, dev_id, st, now):
@@ -1539,28 +1561,27 @@ class Poller:
         self.db.commit()
 
     def run(self):
+        next_due = {}   # device id -> monotonic time it is next due (each device has its own interval)
         while True:
             self.reload_config()
-            interval = self.cfg.get("poll_seconds", 60)
-            start = time.monotonic()
             for dev in self.devices:
+                if time.monotonic() < next_due.get(dev["id"], 0):
+                    continue
+                next_due[dev["id"]] = time.monotonic() + self.poll_interval(dev)
                 try:
                     self.poll_one(dev)
                 except Exception as e:
                     log.exception("unexpected error polling %s", dev.get("id"))
                     self.set_status(dev, int(time.time()), "error", str(e))
                 self.db.commit()
-            next_poll = start + max(1.0, interval)
-            while True:
-                try:
-                    self.control_tick()
-                except Exception:
-                    log.exception("unexpected error in control loop")
-                    self.db.rollback()
-                remaining = next_poll - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(1.0, remaining))
+            try:
+                self.control_tick()
+            except Exception:
+                log.exception("unexpected error in control loop")
+                self.db.rollback()
+            due = [next_due.get(d["id"], 0) for d in self.devices]
+            wait = (min(due) - time.monotonic()) if due else 1.0
+            time.sleep(max(0.05, min(1.0, wait)))
 
 
 def main():

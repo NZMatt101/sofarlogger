@@ -265,7 +265,7 @@ case 'usage':
     $st = $db->prepare("SELECT date(ts, 'unixepoch', 'localtime') AS day,
             MAX(json_extract(data, '$.load_today')) AS used, MAX(json_extract(data, '$.bought_today')) AS imported,
             MAX(json_extract(data, '$.sold_today')) AS exported, MAX(json_extract(data, '$.charge_today')) AS charged,
-            MAX(json_extract(data, '$.discharge_today')) AS discharged
+            MAX(json_extract(data, '$.discharge_today')) AS discharged, MAX(json_extract(data, '$.gen_today')) AS solar_ac
         FROM readings WHERE device = :d GROUP BY day HAVING used IS NOT NULL ORDER BY day");
     $st->bindValue(':d', $src['id']);
     $rate = function ($day, $key) use ($periods) {
@@ -274,13 +274,30 @@ case 'usage':
         foreach ($periods as $p) { if ($p['from'] <= $day) $use = $p; else break; }
         return (float)($use[$key] ?? 0);
     };
+    // The battery counters are DC-side: what left the battery, which is more than reached the house (conversion
+    // losses, the inverter's own standby use). So split house use on the AC side instead: solar used directly is
+    // the solar CT's generation less what was exported and what went into charging (DC charge / efficiency);
+    // the battery supplied whatever house use is left after grid and solar.
+    $chargeEff = 0.94;   // ME3000SP datasheet: charge efficiency 94.1 %
     $days = [];
     foreach (rows($st) as $r) {
-        $used = (float)$r['used']; $grid = (float)$r['imported']; $batt = (float)$r['discharged'];
+        $used = (float)$r['used']; $grid = (float)$r['imported'];
+        if ($r['solar_ac'] !== null) {
+            $solar = (float)$r['solar_ac'] - (float)$r['exported'] - (float)$r['charged'] / $chargeEff;
+            $solar = min(max(0, $solar), max(0, $used - $grid));
+            // The battery can't have delivered more than left it; on a partial day (logging started mid-day)
+            // the counters don't line up, so cap it and count the rest as solar.
+            $batt = min(max(0, $used - $grid - $solar), (float)$r['discharged']);
+            $solar = max(0, $used - $grid - $batt);
+        } else {   // no solar CT reading: fall back to the DC discharge counter
+            $batt = min((float)$r['discharged'], max(0, $used - $grid));
+            $solar = max(0, $used - $grid - $batt);
+        }
         $imp = $rate($r['day'], 'import_rate'); $exp = $rate($r['day'], 'export_rate');
         $days[] = [
             'day' => $r['day'], 'used' => round($used, 2), 'grid' => round($grid, 2), 'battery' => round($batt, 2),
-            'solar' => round(max(0, $used - $grid - $batt), 2),   // the rest came straight from the panels
+            'solar' => round($solar, 2),
+            'battery_dc_out' => round((float)$r['discharged'], 2),   // the raw counter, for the table / checks
             'exported' => round((float)$r['exported'], 2), 'charged' => round((float)$r['charged'], 2),
             'grid_cost' => round($grid * $imp, 2), 'export_credit' => round((float)$r['exported'] * $exp, 2),
             'without_system' => round($used * $imp, 2),         // the same use bought entirely from the grid
